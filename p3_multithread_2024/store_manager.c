@@ -14,22 +14,38 @@
 
 
 /* Constants _______________________________________________________________________________________________________ */
+
 #define MAX_THREADS 16
 
+/* Global Variables_________________________________________________________________________________________________ */
+
+int fd, 
+  profits = 0,
+  product_stock [5] = {0},
+  purchase_rates [5] = { 2, 5, 15, 25, 100 },
+  sale_rates [5] = { 3, 10, 20, 40, 125 };
 
 /* Functions _______________________________________________________________________________________________________ */
-int read_file(char *file_name);
+
+int read_line();
 int my_strtol(char *string, long *number);
+void print_result();
+
+int store_element();
+int process_element(struct element *elem);
+
 int producer();
 int consumer();
 
+
+
 /***
- * Read the file
+ * Reads a line of the file
  * @param file_name: file name
  * @return -1 if error, 0 if success
 */
-int read_file(char *file_name) {
-  return -1;
+int read_line() {
+  return 0;
 }
 
 /***
@@ -48,42 +64,85 @@ int my_strtol(char *string, long *number) {
 
     // Error extracting number (it is not an integer)
     if (nptr && *endptr != 0) {
-        if (mode == 0)
-            fprintf(stdout, "[ERROR] Not an integer\n");
-        return -1;
+      fprintf(stdout, "[ERROR] Not an integer\n");
+      return -1;
     }
     // Overflow
     else if (errno == ERANGE && *number == LONG_MAX)
     {
-        if (mode == 0)
-            fprintf(stdout, "[ERROR] Overflow\n", var);
-        return -1;
+      fprintf(stdout, "[ERROR] Overflow\n", var);
+      return -1;
     }
     // Underflow
     else if (errno == ERANGE && *number == LONG_MIN)
     {
-        if (mode == 0)
-            fprintf(stdout, "[ERROR] Underflow\n", var);
-        return -1;
+      fprintf(stdout, "[ERROR] Underflow\n", var);
+      return -1;
     }
 
     return 0;
 }
 
+
 /***
- * Producer function
+ * Prints the result
+*/
+void print_result() {
+  printf("Total: %d euros\n", profits);
+  printf("Stock:\n");
+  printf("  Product 1: %d\n", product_stock[0]);
+  printf("  Product 2: %d\n", product_stock[1]);
+  printf("  Product 3: %d\n", product_stock[2]);
+  printf("  Product 4: %d\n", product_stock[3]);
+  printf("  Product 5: %d\n", product_stock[4]);
+}
+
+
+
+int store_element() {
+  return 0;
+};
+
+/***
+ * It processes the information inside an struct element and updats the product stock and profits
+*/
+int process_element(struct element *elem) {
+  int id = elem.product_id - 1;
+
+  if (strcmp(elem.op, "PURCHASE") == 0) {
+    product_stock[id] += elem.units;
+    profits -= purchase_rates[id] * elem.units;
+  } 
+  else if (strcmp(elem.op, "SALE") == 0) {
+    product_stock[id] -= elem.units;
+    profits += sale_rates[id] * elem.units;
+  }
+
+  return -1;
+};
+
+
+
+/***
+ * Producer function for the producer thread
  * @return -1 if error, 0 if success
 */
 int producer() {
+  // while (1) {
+  //   store_element();
+  // }
   pthread_exit(0);
   return 0;
 }
 
 /***
- * Consumer function
+ * Consumer function for the consumer thread
  * @return -1 if error, 0 if success
 */
 int consumer() {
+  // while (1) {
+  //   process_element();
+  // }
   pthread_exit(0);
   return 0;
 }
@@ -104,45 +163,73 @@ int main (int argc, const char * argv[])
   char *file_name = argv[1];
   long num_producers, num_consumers, buffer_size;
 
-  if (my_strtol(argv[2], &num_producers) == -1) return -1;
-  if (my_strtol(argv[3], &num_consumers) == -1) return -1;
-  if (my_strtol(argv[4], &buffer_size) == -1) return -1;
+  // Open the file
+  if ((fd = open(file_name, O_RDONLY)) == -1) {
+    perror("ERROR opening file");
+    return -1;
+  }
 
-  if (N < 1) {
+  // Convert all the arguments to long
+  if (my_strtol(argv[2], &num_producers) == -1) {
+    perror("ERROR converting string to long");
+    return -1;
+  }
+  if (my_strtol(argv[3], &num_consumers) == -1) {
+    perror("ERROR converting string to long");
+    return -1;
+  }
+  if (my_strtol(argv[4], &buffer_size) == -1) {
+    perror("ERROR converting string to long");
+    return -1;
+  }
+
+  // fscanf("%d", )
+
+  // Check the number of consumers  
+  if (num_consumers < 1) {
     printf("ERROR: The number of consumers must be greater than 0\n");
     return -1;
   }
 
-  if (M < 1) {
+  // Check the number of producers
+  if (num_producers < 1) {
     printf("ERROR: The number of producers must be greater than 0\n");
     return -1;
   }
+
+  // Malloc
+  pthread_t producer_thread = malloc(sizeof(pthread_t) * num_producers);
+  pthread_t consumer_thread = malloc(sizeof(pthread_t) * num_consumers);
+
+  for (int i = 0; i < num_producers; i++) {
+    pthread_create(&producer_thread[i], NULL, producer, NULL);
+  }
   
-  // printf("WARNING: Overflow buffer\n");
+  for (int i = 0; i < num_consumer; i++) {
+    pthread_create(&consumer_thread[i], NULL, consumer, NULL);
+  }
 
-  // Variables
-  int profits = 0;
-  int product_stock [5] = {0};
+  for (int i = 0; i < num_producers; i++) {
+    pthread_join(&producer_thread[i], NULL, producer, NULL);
+  }
+  
+  for (int i = 0; i < num_consumer; i++) {
+    pthread_join(&consumer_thread[i], NULL, consumer, NULL);
+  }
 
-  // malloc
-  pthread_t producer_thread;
-  pthread_t consumer_thread;
+  // block main process until all threads are finished
 
-  // First one thread for the producer 
-  pthread_create(&producer_thread, NULL, producer, NULL);
-  pthread_create(&producer_thread, NULL, consumer, NULL);
-  pthread_join(&producer_thread, NULL, producer, NULL);
-  pthread_exit(&producer_thread, NULL, producer, NULL);
+  free(producer_thread);
+  free(consumer_thread);
 
+  // Close the file
+  if (close(fd) == -1) {
+    perror("ERROR closing file");
+    return -1;
+  }
 
   // Output
-  printf("Total: %d euros\n", profits);
-  printf("Stock:\n");
-  printf("  Product 1: %d\n", product_stock[0]);
-  printf("  Product 2: %d\n", product_stock[1]);
-  printf("  Product 3: %d\n", product_stock[2]);
-  printf("  Product 4: %d\n", product_stock[3]);
-  printf("  Product 5: %d\n", product_stock[4]);
+  print_result(product_stock);
 
   return 0;
 }
