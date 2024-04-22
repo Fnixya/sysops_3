@@ -49,6 +49,7 @@ int process_element(struct element *elem);
 int producer();
 int consumer();
 
+/* __________________________________________________________________________________________________________________ */
 
 
 /***
@@ -257,10 +258,10 @@ int main (int argc, const char * argv[])
 
   // Join the producer and consumer threads
   for (int i = 0; i < num_producers; i++) {
-    pthread_join(&producer_thread[i], NULL, producer, NULL);
+    pthread_join(producer_thread[i], NULL);
   }
   for (int i = 0; i < num_consumer; i++) {
-    pthread_join(&consumer_thread[i], NULL, consumer, NULL);
+    pthread_join(consumer_thread[i], NULL);
   }
 
   // block main process until all threads are finished
