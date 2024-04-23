@@ -12,12 +12,15 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+#include <errno.h>
+
 
 /* Constants _______________________________________________________________________________________________________ */
 
 #define MAX_THREADS 256
 #define MAX_BUFFER 65536
-
+#define LINE_SIZE 64
+ 
 #define READFILE_NO 0
 #define ENQUEUE_NO 1
 #define DEQUEUE_NO 2
@@ -25,7 +28,10 @@
 
 /* Global Variables_________________________________________________________________________________________________ */
 
-int op_count, op_max, fd, 
+char operations;
+
+int op_count, op_num, elem_count,
+  fd, 
   profits = 0,
   product_stock [5] = {0},
   purchase_rates [5] = { -2, -5, -15, -25, -100 },
@@ -39,11 +45,11 @@ queue elem_queue;
 
 /* Functions _______________________________________________________________________________________________________ */
 
-int read_line();
+int read_file();
 int my_strtol(char *string, long *number);
 void print_result();
 
-int store_element();
+int store_element(struct element elem);
 int process_element(struct element *elem);
 
 int producer();
@@ -53,11 +59,12 @@ int consumer();
 
 
 /***
- * Reads a line of the file
+ * It maps the file into memory
  * @param file_name: file name
  * @return -1 if error, 0 if success
 */
-int read_line() {
+int read_file() {
+  operations = (char *) malloc(sizeof(char) * LINE_SIZE * op_num);
   return 0;
 }
 
@@ -70,7 +77,6 @@ int read_line() {
 int my_strtol(char *string, long *number) {
     // https://stackoverflow.com/questions/8871711/atoi-how-to-identify-the-difference-between-zero-and-error
     char *nptr, *endptr = NULL;                            /* pointer to additional chars  */
-    
     nptr = string;
     endptr = NULL;
     errno = 0;
@@ -115,17 +121,11 @@ void print_result() {
 /***
  * It stores the information scrapped from the file inside an struct element and pushes it into the queue
 */
-int store_element(int product_id, int op, int units) {
-  // Create the element and store the information
-  struct element elem;
-  elem.product_id = product_id;
-  elem.op = op;
-  elem.units = units;
-
+int store_element(struct element elem) {
   // Critical section -> thread pushes the element into the queue
-  pthread_mutex_lock(&read_mutex);
-  queue_put(&elem_queue, &elem);
-  pthread_mutex_unlock(&read_mutex);
+  pthread_mutex_lock(&read_elem_mutex);
+  queue_put(&elem_queue, elem);
+  pthread_mutex_unlock(&read_elem_mutex);
   
   return 0;
 };
@@ -136,13 +136,14 @@ int store_element(int product_id, int op, int units) {
 */
 int process_element(struct element *elem) {
   // rate: it gets the purchase or sale rate of the product (depending on the operation code) 
-  int rate = (elem.op == 0) ? purchase_rates[elem.product_id-1] : sale_rates[elem.product_id-1];
+  int rate = (elem.op == 0) ? purchase_rates[elem.product_id-1] : sale_rates[elem.product_id-1],
+      multiplier = (elem.op == 0) ? -1 : 1,;
 
   // Critical section -> thread updates common variables: product_stock[] and profits
-  pthread_mutex_lock(&write_mutex);
-  product_stock[id] += multipler * elem.units;
+  pthread_mutex_lock(&write_elem_mutex);
+  product_stock[elem.product_id-1] += multipler * elem.units;
   profits = rate * elem.units;
-  pthread_mutex_unlock(&write_mutex);
+  pthread_mutex_unlock(&write_elem_mutex);
 
   return 0;
 };
@@ -153,10 +154,37 @@ int process_element(struct element *elem) {
  * @return -1 if error, 0 if success
 */
 int producer() {
-  int product_id, op, units;
-  while (op_count < op_max) {
-    read_line(&product_id, &op, &units);
-    store_element(product_id, op, units);
+  struct element elem;
+  char *op_str;
+  int operation;
+  int product_id, units;
+  while (op_count < op_num) {    
+    // Extract operation from the memory
+    pthread_mutex_lock(&read_file_mutex);
+    if (op_count >= op_num) {
+      pthread_mutex_unlock(&read_file_mutex);
+      break;
+    }
+    operation = op_count++;
+    pthread_mutex_unlock(&read_file_mutex);
+
+    // Extract the information from the operation
+    sscanf(operation, "%d %s %d", &product_id, &op_str, &units);
+
+    // Transform the extracted information as an element
+    if (strcmp(op_str, "PURCHASE") == 0)
+      elem.op = 0;
+    else if (strcmp(op_str, "SALE") == 0)
+      elem.op = 1;
+    else 
+      elem.op = -1;
+
+    elem.product_id = product_id;
+    elem.units = units;
+
+    // Store the element inside the queue
+    // Conditional variable here
+    store_element(elem);
   }
 
   pthread_exit(0);
@@ -168,7 +196,10 @@ int producer() {
  * @return -1 if error, 0 if success
 */
 int consumer() {
-  while (elem_count < op_max) {
+  while (elem_count < op_num) {
+
+
+    // Conditional variable here
     process_element();
   }
   pthread_exit(0);
@@ -264,7 +295,6 @@ int main (int argc, const char * argv[])
     pthread_join(consumer_thread[i], NULL);
   }
 
-  // block main process until all threads are finished
   
   pthread_mutex_destroy(&read_mutex);
   pthread_mutex_destroy(&write_mutex);
