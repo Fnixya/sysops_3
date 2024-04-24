@@ -44,6 +44,15 @@ pthread_cond_t non_full, non_empty;
 
 queue elem_queue;
 
+
+typedef struct {
+  int product_id;
+  char operation[8];
+  int count;
+} Operation;
+
+
+
 /* Functions _______________________________________________________________________________________________________ */
 
 int copy_file();
@@ -259,102 +268,73 @@ void consumer() {
 */
 int main (int argc, const char * argv[])
 {
-  // Check the number of arguments
-  if (argc != 5) {
-    printf("ERROR: The program must be called with 4 arguments <file> <producers> <consermers> <buffer>\n");
-    return -1;
+
+  if (argc != 5) { // Check if the number of arguments is correct
+    printf("Usage: ./store_manager <file name> <num producers> <num consumers> <buff size>\n");
+    return 1;
   }
 
-  const char *file_name = argv[1];
-  long num_producers, num_consumers, buffer_size;
+  const char* file_name = argv[1]; // Get the file name
+  int num_producers = atoi(argv[2]); // Get the number of producers
+  int num_consumers = atoi(argv[3]); // Get the number of consumers
+  int buff_size = atoi(argv[4]); // Get the buffer size
 
-  // Convert all the arguments to long
-  if (my_strtol(argv[2], &num_producers) == -1) {
-    fprintf(stderr, "ERROR converting string to long\n");
-    return -1;
-  }
-  if (my_strtol(argv[3], &num_consumers) == -1) {
-    fprintf(stderr, "ERROR converting string to long\n");
-    return -1;
-  }
-  if (my_strtol(argv[4], &buffer_size) == -1) {
-    fprintf(stderr, "ERROR converting string to long\n");
-    return -1;
+  FILE* file = fopen(file_name, "r"); // Open the file
+  if (file == NULL) { 
+    perror("Error opening file"); // Check if the file was opened correctly
+    return 1;
   }
 
+  int num_operations; // Number of operations
+  fscanf(file, "%d", &num_operations); // Read the number of operations from the file
 
-  // Check the number of producers
-  int err_count = 0;
-  if (num_producers < 1) {
-    printf("ERROR: The number of producers must be greater than 0\n");
-    err_count++;
-  }
-  // Check the number of consumers  
-  if (num_consumers < 1) {
-    printf("ERROR: The number of consumers must be greater than 0\n");
-    err_count++;
-  }
-  // Check the buffer size  
-  if (buffer_size < 1) {
-    printf("ERROR: The buffer size must be greater than 0\n");
-    err_count++;
+  Operation* operations = malloc(num_operations * sizeof(Operation)); // Allocate memory for the operations
+  for (int i = 0; i < num_operations; i++) { // Read the operations from the file
+    fscanf(file, "%d %s %d", &operations[i].product_id, operations[i].operation, &operations[i].count);
   }
 
-  if (err_count > 0)
-    return -1;
+  fclose(file); // Close the file
 
-  // Warn user of big variables
-  if (MAX_BUFFER < buffer_size) {
-    printf("WARNING: The size of the buffer might be unnecessary big. It might hinder performance.\n");
+  pthread_t producers[num_producers]; // Array of producer threads
+  pthread_t consumers[num_consumers]; // Array of consumer threads
+
+  pthread_mutex_init(&mutex, NULL); // Initialize the mutex
+  pthread_cond_init(&no_full, NULL); // Initialize the condition variable no_full
+  pthread_cond_init(&no_empty, NULL); // Initialize the condition variable no_empty
+
+  int operations_per_producer = num_operations / num_producers; // Number of operations per producer
+  for (int i = 0; i < num_producers; i++) { 
+    int start = i * operations_per_producer; // Start index
+    int end = (i == num_producers - 1) ? num_operations : start + operations_per_producer; // End index 
+    // Assuming the Producer function takes a struct with the start and end indices
+    pthread_create(&producers[i], NULL, Producer, &(Range){start, end}); // Create the producer thread
   }
-  if (MAX_THREADS < num_producers) {
-    printf("WARNING: The number of producers might be unnecessary big. It might hinder performance.\n");
-  }
-  if (MAX_THREADS < num_consumers) {
-    printf("WARNING: The number of consumers might be unnecessary big. It might hinder performance.\n");
-  }
 
-  copy_file();
-
-  // pthread variables initialization
-  for (int i = 0; i < 4; i++) {
-    pthread_mutex_init(&mutex[i], NULL);
-  }
-  pthread_cond_init(&non_full, NULL);
-  pthread_cond_init(&non_empty, NULL);
-
-  pthread_t *producer_thread = (pthread_t *) malloc(sizeof(pthread_t) * num_producers);
-  pthread_t *consumer_thread = (pthread_t *) malloc(sizeof(pthread_t) * num_consumers);
-
-
-  // Create the producer and consumer threads
-  for (int i = 0; i < num_producers; i++) {
-    pthread_create(&(producer_thread[i]), NULL, (void *) producer, NULL);
-  }
   for (int i = 0; i < num_consumers; i++) {
-    pthread_create(&(consumer_thread[i]), NULL, (void *) consumer, NULL);
+    pthread_create(&consumers[i], NULL, Consumer, NULL); // Create the consumer thread
   }
 
-  // Join the producer and consumer threads
   for (int i = 0; i < num_producers; i++) {
-    pthread_join(producer_thread[i], NULL);
+    pthread_join(producers[i], NULL); // Wait for the producer threads to finish
   }
+
   for (int i = 0; i < num_consumers; i++) {
-    pthread_join(consumer_thread[i], NULL);
+    pthread_join(consumers[i], NULL); // Wait for the consumer threads to finish
   }
 
-  for (int i = 0; i < 4; i++) {
-    pthread_mutex_destroy(&mutex[i]);
-  }
-  pthread_cond_destroy(&non_full);
-  pthread_cond_destroy(&non_empty);
-
-  free(producer_thread);
-  free(consumer_thread);
-  free(operations);
+  pthread_mutex_destroy(&mutex);  // Destroy the mutex
+  pthread_cond_destroy(&no_full); // Destroy the condition variable no_full
+  pthread_cond_destroy(&no_empty); // Destroy the condition variable no_empty
 
   // Output
-  print_result(product_stock);
+  printf("Total: %d euros\n", profits);
+  printf("Stock:\n");
+  printf("  Product 1: %d\n", product_stock[0]);
+  printf("  Product 2: %d\n", product_stock[1]);
+  printf("  Product 3: %d\n", product_stock[2]);
+  printf("  Product 4: %d\n", product_stock[3]);
+  printf("  Product 5: %d\n", product_stock[4]);
 
-  exit(0);
+  return 0;
+
 }
