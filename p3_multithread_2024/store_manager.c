@@ -22,10 +22,10 @@
 #define MAX_BUFFER 65536
 #define LINE_SIZE 64
  
-#define READFILE_NO 0
-#define ENQUEUE_NO 1
-#define DEQUEUE_NO 2
-#define UPDATE_NO 3
+#define GETOP_MUTEXNO 0
+#define ENQUEUE_MUTEXNO 1
+#define DEQUEUE_MUTEXNO 2
+#define UPDATESTOCK_MUTEXNO 3
 
 /* Global Variables_________________________________________________________________________________________________ */
 
@@ -46,7 +46,7 @@ queue elem_queue;
 
 /* Functions _______________________________________________________________________________________________________ */
 
-int read_file();
+int copy_file();
 int my_strtol(const char *string, long *number);
 void print_result();
 
@@ -64,8 +64,28 @@ void consumer();
  * @param file_name: file name
  * @return -1 if error, 0 if success
 */
-int read_file() {
+int copy_file() {
+  // Open the file
+  if ((fd = open(file_name, O_RDONLY)) == -1) {
+    perror("ERROR opening file\n");
+    return -1;
+  }
+
+  // Read the number of operations from the file
+  // ..........
+
+  // MALLOC the operations array
   operations = (char **) malloc(sizeof(char) * LINE_SIZE * op_num);
+  
+  // Extract the operations from the file
+  // .........
+
+  // Close the file
+  if (close(fd) == -1) {
+    perror("ERROR closing file");
+    return -1;
+  } 
+
   return 0;
 }
 
@@ -125,15 +145,15 @@ void print_result() {
 */
 int store_element(struct element *elem) {
   // Critical section !! -> thread pushes the element into the queue
-  pthread_mutex_lock(&mutex[ENQUEUE_NO]);
+  pthread_mutex_lock(&mutex[ENQUEUE_MUTEXNO]);
   while (queue_full(&elem_queue)) {
-    pthread_cond_wait(&non_full, &mutex[ENQUEUE_NO]);
+    pthread_cond_wait(&non_full, &mutex[ENQUEUE_MUTEXNO]);
   }
 
   queue_put(&elem_queue, elem);
 
   pthread_cond_signal(&non_empty);
-  pthread_mutex_unlock(&mutex[ENQUEUE_NO]);
+  pthread_mutex_unlock(&mutex[ENQUEUE_MUTEXNO]);
   
   return 0;
 };
@@ -148,10 +168,10 @@ int process_element(struct element *elem) {
       multiplier = (elem->op == 0) ? 1 : -1;
 
   // Critical section !! -> thread updates common variables: product_stock[] and profits
-  pthread_mutex_lock(&mutex[UPDATE_NO]);
+  pthread_mutex_lock(&mutex[UPDATESTOCK_MUTEXNO]);
   product_stock[elem->product_id-1] += multiplier * elem->units;
   profits = rate * elem->units;
-  pthread_mutex_unlock(&mutex[UPDATE_NO]);
+  pthread_mutex_unlock(&mutex[UPDATESTOCK_MUTEXNO]);
 
   return 0;
 };
@@ -162,19 +182,24 @@ int process_element(struct element *elem) {
  * @return -1 if error, 0 if success
 */
 void producer() {
+  fprintf(stdout, "Start producer!\n");
+  
   struct element elem;
   char *op_str = NULL;
   int op_index;
   int product_id, units;
   while (op_count < op_num) {    
+    fprintf(stdout, "I'm a producer!\n");
+
+
     // Critical section !! -> assign operation to thread
-    pthread_mutex_lock(&mutex[READFILE_NO]);
+    pthread_mutex_lock(&mutex[READFILE_MUTEXNO]);
     if (op_count >= op_num) {
-      pthread_mutex_unlock(&mutex[READFILE_NO]);
+      pthread_mutex_unlock(&mutex[READFILE_MUTEXNO]);
       break;
     }
     op_index = op_count++;
-    pthread_mutex_unlock(&mutex[READFILE_NO]);
+    pthread_mutex_unlock(&mutex[READFILE_MUTEXNO]);
 
     // Extract the information from the operation
     sscanf(operations[op_index], "%d %s %d", &product_id, op_str, &units);
@@ -203,19 +228,22 @@ void producer() {
  * @return -1 if error, 0 if success
 */
 void consumer() {
+  fprintf(stdout, "Start consumer!\n");
   struct element *elem;
   while (elem_count < op_num) {
+    fprintf(stdout, "I'm a consumer!\n");
+
     // Critical section !! -> thread pops the element from the queue
-    pthread_mutex_lock(&mutex[DEQUEUE_NO]);
+    pthread_mutex_lock(&mutex[DEQUEUE_MUTEXNO]);
     while (queue_empty(&elem_queue)) {
-      pthread_cond_wait(&non_empty, &mutex[DEQUEUE_NO]);
+      pthread_cond_wait(&non_empty, &mutex[DEQUEUE_MUTEXNO]);
     }
 
     elem = queue_get(&elem_queue);
     elem_count++;
 
     pthread_cond_signal(&non_empty);
-    pthread_mutex_unlock(&mutex[DEQUEUE_NO]);
+    pthread_mutex_unlock(&mutex[DEQUEUE_MUTEXNO]);
 
     // Process the element and update the common variables
     process_element(elem);
@@ -240,12 +268,6 @@ int main (int argc, const char * argv[])
   const char *file_name = argv[1];
   long num_producers, num_consumers, buffer_size;
 
-  // Open the file
-  if ((fd = open(file_name, O_RDONLY)) == -1) {
-    perror("ERROR opening file\n");
-    return -1;
-  }
-
   // Convert all the arguments to long
   if (my_strtol(argv[2], &num_producers) == -1) {
     fprintf(stderr, "ERROR converting string to long\n");
@@ -262,35 +284,37 @@ int main (int argc, const char * argv[])
 
 
   // Check the number of producers
+  int err_count = 0;
   if (num_producers < 1) {
     printf("ERROR: The number of producers must be greater than 0\n");
-    return -1;
+    err_count++;
   }
   // Check the number of consumers  
   if (num_consumers < 1) {
     printf("ERROR: The number of consumers must be greater than 0\n");
-    return -1;
+    err_count++;
   }
-  // Check the number of consumers  
+  // Check the buffer size  
   if (buffer_size < 1) {
     printf("ERROR: The buffer size must be greater than 0\n");
-    return -1;
+    err_count++;
   }
 
+  if (err_count > 0)
+    return -1;
 
   // Warn user of big variables
   if (MAX_BUFFER < buffer_size) {
-    printf("WARNING: The size of the buffer might be unnecessary big. It might affect performance.\n");
-    return -1;
+    printf("WARNING: The size of the buffer might be unnecessary big. It might hinder performance.\n");
   }
   if (MAX_THREADS < num_producers) {
-    printf("WARNING: The number of producers might be unnecessary big. It might affect performance.\n");
-    return -1;
+    printf("WARNING: The number of producers might be unnecessary big. It might hinder performance.\n");
   }
   if (MAX_THREADS < num_consumers) {
-    printf("WARNING: The number of consumers might be unnecessary big. It might affect performance.\n");
-    return -1;
+    printf("WARNING: The number of consumers might be unnecessary big. It might hinder performance.\n");
   }
+
+  copy_file();
 
   // pthread variables initialization
   for (int i = 0; i < 4; i++) {
@@ -327,12 +351,7 @@ int main (int argc, const char * argv[])
 
   free(producer_thread);
   free(consumer_thread);
-
-  // Close the file
-  if (close(fd) == -1) {
-    perror("ERROR closing file");
-    return -1;
-  }
+  free(operations);
 
   // Output
   print_result(product_stock);
