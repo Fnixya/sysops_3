@@ -43,7 +43,7 @@ queue* queue_init(int size)
  * @param x: element
  * @return 0 if the element was enqueued successfully, -1 otherwise
 */
-int queue_put(queue *q, struct element* x)
+int queue_put(queue *q, struct element* elem)
 {
     // Check if the queue is full
     if (q->count == q->size) {
@@ -53,7 +53,7 @@ int queue_put(queue *q, struct element* x)
     // Increment rear and count
     q->rear++;
     q->count++;
-    q->array[q->rear] = *x;
+    q->array[q->rear] = *elem;
   return 0;
 }
 
