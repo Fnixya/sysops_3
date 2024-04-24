@@ -274,10 +274,51 @@ int main (int argc, const char * argv[])
     return 1;
   }
 
-  const char* file_name = argv[1]; // Get the file name
-  int num_producers = atoi(argv[2]); // Get the number of producers
-  int num_consumers = atoi(argv[3]); // Get the number of consumers
-  int buff_size = atoi(argv[4]); // Get the buffer size
+  const char *file_name = argv[1];
+  long num_producers, num_consumers, buffer_size;
+
+  // Convert all the arguments to long
+  if (my_strtol(argv[2], &num_producers) == -1) {
+    fprintf(stderr, "ERROR converting string to long\n");
+    return -1;
+  }
+  if (my_strtol(argv[3], &num_consumers) == -1) {
+    fprintf(stderr, "ERROR converting string to long\n");
+    return -1;
+  }
+  if (my_strtol(argv[4], &buffer_size) == -1) {
+    fprintf(stderr, "ERROR converting string to long\n");
+    return -1;
+
+  // Check the number of producers
+  int err_count = 0;
+  if (num_producers < 1) {
+    printf("ERROR: The number of producers must be greater than 0\n");
+    err_count++;
+  }
+  // Check the number of consumers  
+  if (num_consumers < 1) {
+    printf("ERROR: The number of consumers must be greater than 0\n");
+    err_count++;
+  }
+  // Check the buffer size  
+  if (buffer_size < 1) {
+    printf("ERROR: The buffer size must be greater than 0\n");
+    err_count++;
+
+  if (err_count > 0)
+    return -1;
+
+  // Warn user of big variables
+  if (MAX_BUFFER < buffer_size) {
+    printf("WARNING: The size of the buffer might be unnecessary big. It might hinder performance.\n");
+  }
+  if (MAX_THREADS < num_producers) {
+    printf("WARNING: The number of producers might be unnecessary big. It might hinder performance.\n");
+  }
+  if (MAX_THREADS < num_consumers) {
+    printf("WARNING: The number of consumers might be unnecessary big. It might hinder performance.\n");
+
 
   FILE* file = fopen(file_name, "r"); // Open the file
   if (file == NULL) { 
@@ -307,11 +348,11 @@ int main (int argc, const char * argv[])
     int start = i * operations_per_producer; // Start index
     int end = (i == num_producers - 1) ? num_operations : start + operations_per_producer; // End index 
     // Assuming the Producer function takes a struct with the start and end indices
-    pthread_create(&producers[i], NULL, Producer, &(Range){start, end}); // Create the producer thread
+    pthread_create(&producers[i], NULL, (void *) producer, &(Range){start, end}); // Create the producer thread
   }
 
   for (int i = 0; i < num_consumers; i++) {
-    pthread_create(&consumers[i], NULL, Consumer, NULL); // Create the consumer thread
+    pthread_create(&consumers[i], NULL, (void *) consumer, NULL); // Create the consumer thread
   }
 
   for (int i = 0; i < num_producers; i++) {
