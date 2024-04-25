@@ -339,9 +339,11 @@ int main (int argc, const char * argv[])
   pthread_t producers[num_producers]; // Array of producer threads
   pthread_t consumers[num_consumers]; // Array of consumer threads
 
-  pthread_mutex_init(&mutex, NULL); // Initialize the mutex
-  pthread_cond_init(&no_full, NULL); // Initialize the condition variable no_full
-  pthread_cond_init(&no_empty, NULL); // Initialize the condition variable no_empty
+  for (int i = 0; i < 4; i++) {
+    pthread_mutex_init(&mutex[i], NULL); // Initialize the mutex
+  }
+  pthread_cond_init(&non_full, NULL); // Initialize the condition variable no_full
+  pthread_cond_init(&non_empty, NULL); // Initialize the condition variable no_empty
 
   int operations_per_producer = num_operations / num_producers; // Number of operations per producer
   for (int i = 0; i < num_producers; i++) { 
@@ -362,19 +364,15 @@ int main (int argc, const char * argv[])
   for (int i = 0; i < num_consumers; i++) {
     pthread_join(consumers[i], NULL); // Wait for the consumer threads to finish
   }
-
-  pthread_mutex_destroy(&mutex);  // Destroy the mutex
-  pthread_cond_destroy(&no_full); // Destroy the condition variable no_full
-  pthread_cond_destroy(&no_empty); // Destroy the condition variable no_empty
+  
+  for (int i = 0; i < 4; i++) {
+    pthread_mutex_destroy(&mutex[i]); // Destroy the mutex
+  }
+  pthread_cond_destroy(&non_full); // Destroy the condition variable no_full
+  pthread_cond_destroy(&non_empty); // Destroy the condition variable no_empty
 
   // Output
-  printf("Total: %d euros\n", profits);
-  printf("Stock:\n");
-  printf("  Product 1: %d\n", product_stock[0]);
-  printf("  Product 2: %d\n", product_stock[1]);
-  printf("  Product 3: %d\n", product_stock[2]);
-  printf("  Product 4: %d\n", product_stock[3]);
-  printf("  Product 5: %d\n", product_stock[4]);
+  print_result();
 
   return 0;
 
