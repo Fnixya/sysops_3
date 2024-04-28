@@ -46,10 +46,10 @@ queue elem_queue;
 
 
 typedef struct {
-  int product_id;
-  char operation[8];
-  int count;
-} Operation;
+  int product_id; //Product identifier
+  int op;         //Operation
+  int units;      //Product units
+} Element;
 
 
 
@@ -329,9 +329,15 @@ int main (int argc, const char * argv[])
   int num_operations; // Number of operations
   fscanf(file, "%d", &num_operations); // Read the number of operations from the file
 
-  Operation* operations = malloc(num_operations * sizeof(Operation)); // Allocate memory for the operations
-  for (int i = 0; i < num_operations; i++) { // Read the operations from the file
-    fscanf(file, "%d %s %d", &operations[i].product_id, operations[i].operation, &operations[i].count);
+  Element* elements = malloc(num_operations * sizeof(Element));
+  for (int i = 0; i < num_operations; i++) {
+    char operation[8];
+    fscanf(file, "%d %s %d", &elements[i].product_id, operation, &elements[i].units);
+    if (strcmp(operation, "PURCHASE") == 0) {
+      elements[i].op = 0; // Assuming 0 represents PURCHASE
+    } else {
+      elements[i].op = 1; // Assuming 1 represents SALE
+    }
   }
 
   fclose(file); // Close the file
