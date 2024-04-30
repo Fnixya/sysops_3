@@ -29,6 +29,7 @@
 /* Global Variables_________________________________________________________________________________________________ */
 
 char **operations;
+long num_producers, num_consumers, buffer_size;
 
 int op_count, op_num, elem_count,
   fd, 
@@ -54,6 +55,7 @@ typedef struct {
 
 /* Functions _______________________________________________________________________________________________________ */
 
+int process_args(int argc, const char *argv[]);
 int copy_file();
 int my_strtol(const char *string, long *number);
 void print_result();
@@ -66,6 +68,54 @@ void consumer();
 
 /* __________________________________________________________________________________________________________________ */
 
+
+/***
+ * It processes the arguments passed to the program
+*/
+int process_args(int argc, const char * argv[]) {
+  // Check if the number of arguments is correct
+  if (argc != 5) { 
+    printf("Usage: ./store_manager <file name> <num producers> <num consumers> <buff size>\n");
+    return 1;
+  }
+
+  // Convert all the arguments to long
+  if (my_strtol(argv[2], &num_producers) == -1) {
+    fprintf(stderr, "ERROR converting string to long\n");
+    return -1;
+  }
+  if (my_strtol(argv[3], &num_consumers) == -1) {
+    fprintf(stderr, "ERROR converting string to long\n");
+    return -1;
+  }
+  if (my_strtol(argv[4], &buffer_size) == -1) {
+    fprintf(stderr, "ERROR converting string to long\n");
+    return -1;
+  }
+
+  // Check the number of producers
+  int err_count = 0;
+  if (num_producers < 1) {
+    printf("ERROR: The number of producers must be greater than 0\n");
+    err_count++;
+  }
+  // Check the number of consumers  
+  if (num_consumers < 1) {
+    printf("ERROR: The number of consumers must be greater than 0\n");
+    err_count++;
+  }
+  // Check the buffer size  
+  if (buffer_size < 1) {
+    printf("ERROR: The buffer size must be greater than 0\n");
+    err_count++;
+  }
+
+  if (err_count > 0)
+    return -1;
+
+
+  return 0;
+}
 
 /***
  * It maps the file into memory
@@ -267,57 +317,10 @@ void consumer() {
 */
 int main (int argc, const char * argv[])
 {
-
-  if (argc != 5) { // Check if the number of arguments is correct
-    printf("Usage: ./store_manager <file name> <num producers> <num consumers> <buff size>\n");
-    return 1;
-  }
+  if (process_args(argc, argv) == -1)
+    return -1;
 
   const char *file_name = argv[1];
-  long num_producers, num_consumers, buffer_size;
-
-  // Convert all the arguments to long
-  if (my_strtol(argv[2], &num_producers) == -1) {
-    fprintf(stderr, "ERROR converting string to long\n");
-    return -1;
-  }
-  if (my_strtol(argv[3], &num_consumers) == -1) {
-    fprintf(stderr, "ERROR converting string to long\n");
-    return -1;
-  }
-  if (my_strtol(argv[4], &buffer_size) == -1) {
-    fprintf(stderr, "ERROR converting string to long\n");
-    return -1;
-
-  // Check the number of producers
-  int err_count = 0;
-  if (num_producers < 1) {
-    printf("ERROR: The number of producers must be greater than 0\n");
-    err_count++;
-  }
-  // Check the number of consumers  
-  if (num_consumers < 1) {
-    printf("ERROR: The number of consumers must be greater than 0\n");
-    err_count++;
-  }
-  // Check the buffer size  
-  if (buffer_size < 1) {
-    printf("ERROR: The buffer size must be greater than 0\n");
-    err_count++;
-
-  if (err_count > 0)
-    return -1;
-
-  // Warn user of big variables
-  if (MAX_BUFFER < buffer_size) {
-    printf("WARNING: The size of the buffer might be unnecessary big. It might hinder performance.\n");
-  }
-  if (MAX_THREADS < num_producers) {
-    printf("WARNING: The number of producers might be unnecessary big. It might hinder performance.\n");
-  }
-  if (MAX_THREADS < num_consumers) {
-    printf("WARNING: The number of consumers might be unnecessary big. It might hinder performance.\n");
-
 
   FILE* file = fopen(file_name, "r"); // Open the file
   if (file == NULL) { 
@@ -339,7 +342,19 @@ int main (int argc, const char * argv[])
     }
   }
 
-  fclose(file); // Close the file
+  fclose(file); // Close the file  
+
+  // Warn user of big variables
+  if (MAX_BUFFER < buffer_size) {
+    printf("WARNING: The size of the buffer might be unnecessary big. It might hinder performance.\n");
+  }
+  if (MAX_THREADS < num_producers) {
+    printf("WARNING: The number of producers might be unnecessary big. It might hinder performance.\n");
+  }
+  if (MAX_THREADS < num_consumers) {
+    printf("WARNING: The number of consumers might be unnecessary big. It might hinder performance.\n");
+  }
+
 
   pthread_t producers[num_producers]; // Array of producer threads
   pthread_t consumers[num_consumers]; // Array of consumer threads
