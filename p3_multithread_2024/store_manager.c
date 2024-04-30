@@ -349,11 +349,10 @@ int main (int argc, const char * argv[])
     return 1;
   }
 
-  int num_operations; // Number of operations
-  fscanf(file, "%d", &num_operations); // Read the number of operations from the file
+  fscanf(file, "%d", &op_num); // Read the number of operations from the file
 
-  Element* elements = malloc(num_operations * sizeof(Element));
-  for (int i = 0; i < num_operations; i++) {
+  Element* elements = malloc(op_num * sizeof(Element));
+  for (int i = 0; i < op_num; i++) {
     char operation[8];
     fscanf(file, "%d %s %d", &elements[i].product_id, operation, &elements[i].units);
     if (strcmp(operation, "PURCHASE") == 0) {
@@ -383,10 +382,10 @@ int main (int argc, const char * argv[])
   pthread_cond_init(&non_full, NULL);   // Initialize the condition variable non_full
   pthread_cond_init(&non_empty, NULL);  // Initialize the condition variable nond<<<<<<<<<<<<_empty
 
-  int operations_per_producer = num_operations / num_producers; // Number of operations per producer
+  int operations_per_producer = op_num / num_producers; // Number of operations per producer
   for (int i = 0; i < num_producers; i++) { 
     int start = i * operations_per_producer; // Start index
-    int end = (i == num_producers - 1) ? num_operations : start + operations_per_producer; // End index 
+    int end = (i == num_producers - 1) ? op_num : start + operations_per_producer; // End index 
     // Assuming the Producer function takes a struct with the start and end indices
     pthread_create(&producers[i], NULL, (void *) producer, &(Range){start, end}); // Create the producer thread
   }
