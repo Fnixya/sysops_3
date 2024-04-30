@@ -56,7 +56,9 @@ typedef struct {
 /* Functions _______________________________________________________________________________________________________ */
 
 int process_args(int argc, const char *argv[]);
-int copy_file();
+void print_warnings();
+
+int copy_file(const char *file_name);
 int my_strtol(const char *string, long *number);
 void print_result();
 
@@ -69,8 +71,11 @@ void consumer();
 /* __________________________________________________________________________________________________________________ */
 
 
-/***
+/**
  * It processes the arguments passed to the program
+ * @param argc: number of arguments
+ * @param argv: arguments array
+ * @return -1 if error, 0 if successfull
 */
 int process_args(int argc, const char * argv[]) {
   // Check if the number of arguments is correct
@@ -81,40 +86,55 @@ int process_args(int argc, const char * argv[]) {
 
   // Convert all the arguments to long
   if (my_strtol(argv[2], &num_producers) == -1) {
-    fprintf(stderr, "ERROR converting string to long\n");
+    fprintf(stderr, "ERROR: <num producers> is not an interger\n");
     return -1;
   }
   if (my_strtol(argv[3], &num_consumers) == -1) {
-    fprintf(stderr, "ERROR converting string to long\n");
+    fprintf(stderr, "ERROR: <num consumers> is not an interger\n");
     return -1;
   }
   if (my_strtol(argv[4], &buffer_size) == -1) {
-    fprintf(stderr, "ERROR converting string to long\n");
+    fprintf(stderr, "ERROR: <buff size> is not an interger\n");
     return -1;
   }
 
   // Check the number of producers
   int err_count = 0;
   if (num_producers < 1) {
-    printf("ERROR: The number of producers must be greater than 0\n");
+    fprintf(stderr, "ERROR: The number of producers must be greater than 0\n");
     err_count++;
   }
   // Check the number of consumers  
   if (num_consumers < 1) {
-    printf("ERROR: The number of consumers must be greater than 0\n");
+    fprintf(stderr, "ERROR: The number of consumers must be greater than 0\n");
     err_count++;
   }
   // Check the buffer size  
   if (buffer_size < 1) {
-    printf("ERROR: The buffer size must be greater than 0\n");
+    fprintf(stderr, "ERROR: The buffer size must be greater than 0\n");
     err_count++;
   }
 
   if (err_count > 0)
     return -1;
+  else
+    return 0;
+}
 
 
-  return 0;
+/**
+ * Prints some warnings if the passed arguments are unnecessary big
+*/
+void print_warnings() {
+  if (MAX_BUFFER < buffer_size) {
+    printf("WARNING: The size of the buffer might be unnecessary big. It might hinder performance.\n");
+  }
+  if (MAX_THREADS < num_producers) {
+    printf("WARNING: The number of producers might be unnecessary big. It might hinder performance.\n");
+  }
+  if (MAX_THREADS < num_consumers) {
+    printf("WARNING: The number of consumers might be unnecessary big. It might hinder performance.\n");
+  }
 }
 
 /***
@@ -122,7 +142,7 @@ int process_args(int argc, const char * argv[]) {
  * @param file_name: file name
  * @return -1 if error, 0 if success
 */
-int copy_file() {
+int copy_file(const char *file_name) {
   // Open the file
   if ((fd = open(file_name, O_RDONLY)) == -1) {
     perror("ERROR opening file\n");
@@ -146,6 +166,7 @@ int copy_file() {
 
   return 0;
 }
+
 
 /***
  * Conversion from string to long integer using strtol with some error handling
@@ -312,16 +333,16 @@ void consumer() {
 
 
 
-/***
+/**
  * Main function _____________________________________________________________________________________________________
 */
 int main (int argc, const char * argv[])
 {
+  // Checks wether arguments are correct or not
   if (process_args(argc, argv) == -1)
     return -1;
 
   const char *file_name = argv[1];
-
   FILE* file = fopen(file_name, "r"); // Open the file
   if (file == NULL) { 
     perror("Error opening file"); // Check if the file was opened correctly
@@ -342,28 +363,25 @@ int main (int argc, const char * argv[])
     }
   }
 
-  fclose(file); // Close the file  
-
-  // Warn user of big variables
-  if (MAX_BUFFER < buffer_size) {
-    printf("WARNING: The size of the buffer might be unnecessary big. It might hinder performance.\n");
-  }
-  if (MAX_THREADS < num_producers) {
-    printf("WARNING: The number of producers might be unnecessary big. It might hinder performance.\n");
-  }
-  if (MAX_THREADS < num_consumers) {
-    printf("WARNING: The number of consumers might be unnecessary big. It might hinder performance.\n");
+  // Close the file 
+  if (fclose(file) == -1) {
+    perror("Error closing file"); 
+    return -1;  
   }
 
+  // Warn user of big variables passed through the arguments array
+  print_warnings();
 
+
+  // Esto no functiona con arrays, tiene q ir como malloc
   pthread_t producers[num_producers]; // Array of producer threads
   pthread_t consumers[num_consumers]; // Array of consumer threads
 
   for (int i = 0; i < 4; i++) {
     pthread_mutex_init(&mutex[i], NULL); // Initialize the mutex
   }
-  pthread_cond_init(&non_full, NULL); // Initialize the condition variable no_full
-  pthread_cond_init(&non_empty, NULL); // Initialize the condition variable no_empty
+  pthread_cond_init(&non_full, NULL);   // Initialize the condition variable non_full
+  pthread_cond_init(&non_empty, NULL);  // Initialize the condition variable nond<<<<<<<<<<<<_empty
 
   int operations_per_producer = num_operations / num_producers; // Number of operations per producer
   for (int i = 0; i < num_producers; i++) { 
@@ -388,8 +406,8 @@ int main (int argc, const char * argv[])
   for (int i = 0; i < 4; i++) {
     pthread_mutex_destroy(&mutex[i]); // Destroy the mutex
   }
-  pthread_cond_destroy(&non_full); // Destroy the condition variable no_full
-  pthread_cond_destroy(&non_empty); // Destroy the condition variable no_empty
+  pthread_cond_destroy(&non_full);  // Destroy the condition variable non_full
+  pthread_cond_destroy(&non_empty); // Destroy the condition variable non_empty
 
   // Output
   print_result();
