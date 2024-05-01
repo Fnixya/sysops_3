@@ -51,14 +51,15 @@ typedef struct {
   int units;      //Product units
 } Element;
 
+Element* elements = malloc(op_num * sizeof(Element));
 
 
 /* Functions _______________________________________________________________________________________________________ */
 
 int process_args(int argc, const char *argv[]);
+int copy_file(const char *file_name);
 void print_warnings();
 
-int copy_file(const char *file_name);
 int my_strtol(const char *string, long *number);
 void print_result();
 
@@ -122,6 +123,66 @@ int process_args(int argc, const char * argv[]) {
 }
 
 
+/***
+ * It maps the file into memory
+ * @param file_name: file name
+ * @return -1 if error, 0 if success
+*/
+int copy_file(const char *file_name) {
+  FILE* file = fopen(file_name, "r"); // Open the file
+  if (file == NULL) { 
+    perror("Error opening file"); // Check if the file was opened correctly
+    return 1;
+  }
+
+  fscanf(file, "%d", &op_num); // Read the number of operations from the file
+
+  for (int i = 0; i < op_num; i++) {
+    char operation[8];
+    fscanf(file, "%d %s %d", &elements[i].product_id, operation, &elements[i].units);
+    if (strcmp(operation, "PURCHASE") == 0) {
+      elements[i].op = 0; // Assuming 0 represents PURCHASE
+    } 
+    else if (strcmp(operation, "SALE") == 0) {
+      elements[i].op = 1; // Assuming 1 represents SALE
+    }
+    else {
+      elements[i].op = -1; // Assuming -1 represents an invalid operation
+    }
+  }
+
+  // Close the file 
+  if (fclose(file) == -1) {
+    perror("Error closing file"); 
+    return -1;  
+  }
+
+
+  // // Open the file
+  // if ((fd = open(file_name, O_RDONLY)) == -1) {
+  //   perror("ERROR opening file\n");
+  //   return -1;
+  // }
+
+  // // Read the number of operations from the file
+  // // ..........
+
+  // // MALLOC the operations array
+  // operations = (char **) malloc(sizeof(char) * LINE_SIZE * op_num);
+  
+  // // Extract the operations from the file
+  // // .........
+
+  // // Close the file
+  // if (close(fd) == -1) {
+  //   perror("ERROR closing file");
+  //   return -1;
+  // } 
+
+  return 0;
+}
+
+
 /**
  * Prints some warnings if the passed arguments are unnecessary big
 */
@@ -135,36 +196,6 @@ void print_warnings() {
   if (MAX_THREADS < num_consumers) {
     printf("WARNING: The number of consumers might be unnecessary big. It might hinder performance.\n");
   }
-}
-
-/***
- * It maps the file into memory
- * @param file_name: file name
- * @return -1 if error, 0 if success
-*/
-int copy_file(const char *file_name) {
-  // Open the file
-  if ((fd = open(file_name, O_RDONLY)) == -1) {
-    perror("ERROR opening file\n");
-    return -1;
-  }
-
-  // Read the number of operations from the file
-  // ..........
-
-  // MALLOC the operations array
-  operations = (char **) malloc(sizeof(char) * LINE_SIZE * op_num);
-  
-  // Extract the operations from the file
-  // .........
-
-  // Close the file
-  if (close(fd) == -1) {
-    perror("ERROR closing file");
-    return -1;
-  } 
-
-  return 0;
 }
 
 
@@ -312,7 +343,7 @@ void consumer() {
   while (elem_count < op_num) {
     fprintf(stdout, "I'm a consumer!\n");
 
-    // Critical section !! -> thread pops the element from the queue
+    // !! Critical section <begin> !! -> thread pops one element from the queue
     pthread_mutex_lock(&mutex[DEQUEUE_MUTEXNO]);
     while (queue_empty(&elem_queue)) {
       pthread_cond_wait(&non_empty, &mutex[DEQUEUE_MUTEXNO]);
@@ -323,6 +354,7 @@ void consumer() {
 
     pthread_cond_signal(&non_empty);
     pthread_mutex_unlock(&mutex[DEQUEUE_MUTEXNO]);
+    // !! Critical section <end> !!
 
     // Process the element and update the common variables
     process_element(elem);
@@ -342,31 +374,8 @@ int main (int argc, const char * argv[])
   if (process_args(argc, argv) == -1)
     return -1;
 
-  const char *file_name = argv[1];
-  FILE* file = fopen(file_name, "r"); // Open the file
-  if (file == NULL) { 
-    perror("Error opening file"); // Check if the file was opened correctly
-    return 1;
-  }
-
-  fscanf(file, "%d", &op_num); // Read the number of operations from the file
-
-  Element* elements = malloc(op_num * sizeof(Element));
-  for (int i = 0; i < op_num; i++) {
-    char operation[8];
-    fscanf(file, "%d %s %d", &elements[i].product_id, operation, &elements[i].units);
-    if (strcmp(operation, "PURCHASE") == 0) {
-      elements[i].op = 0; // Assuming 0 represents PURCHASE
-    } else {
-      elements[i].op = 1; // Assuming 1 represents SALE
-    }
-  }
-
-  // Close the file 
-  if (fclose(file) == -1) {
-    perror("Error closing file"); 
-    return -1;  
-  }
+  // Copy the contents of the file into memory
+  copy_file(argv[1]);
 
   // Warn user of big variables passed through the arguments array
   print_warnings();
