@@ -45,15 +45,16 @@ queue* queue_init(int size)
 */
 int queue_put(queue *q, struct element* elem)
 {
-    // Check if the queue is full
-    if (q->count == q->size) {
-        return -1;  // Return -1 or error code if the queue is full
-    }
+  // Check if the queue is full
+  if (q->count == q->size) {
+      return -1;  // Return -1 or error code if the queue is full
+  }
 
-    // Increment rear and count
-    q->rear++;
-    q->count++;
-    q->array[q->rear] = *elem;
+  // Increment rear and count
+  q->rear++;
+  q->count++;
+  q->array[q->rear] = *elem;
+  
   return 0;
 }
 

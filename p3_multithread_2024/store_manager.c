@@ -21,10 +21,18 @@
 #define MAX_BUFFER 65536
 #define LINE_SIZE 64
  
-#define GETOP_MUTEXNO 0
+#define GETOPNUM_MUTEXNO 0
 #define ENQUEUE_MUTEXNO 1
 #define DEQUEUE_MUTEXNO 2
 #define UPDATESTOCK_MUTEXNO 3
+
+/* Struct Definition ________________________________________________________________________________________________________ */
+
+typedef struct {
+  int product_id; //Product identifier
+  int op;         //Operation
+  int units;      //Product units
+} Element;
 
 /* Global Variables_________________________________________________________________________________________________ */
 
@@ -39,19 +47,10 @@ int op_count, op_num, elem_count,
   sale_rates [5] = { 3, 10, 20, 40, 125 };
 
 pthread_mutex_t mutex[4];
-pthread_mutex_t read_file_mutex, update_stock_mutex, read_elem_mutex, write_elem_mutex;
 pthread_cond_t non_full, non_empty;
 
 queue elem_queue;
-
-
-typedef struct {
-  int product_id; //Product identifier
-  int op;         //Operation
-  int units;      //Product units
-} Element;
-
-Element* elements = malloc(op_num * sizeof(Element));
+Element* elements;
 
 
 /* Functions _______________________________________________________________________________________________________ */
@@ -132,11 +131,12 @@ int copy_file(const char *file_name) {
   FILE* file = fopen(file_name, "r"); // Open the file
   if (file == NULL) { 
     perror("Error opening file"); // Check if the file was opened correctly
-    return 1;
+    return -1;
   }
 
   fscanf(file, "%d", &op_num); // Read the number of operations from the file
 
+  elements = malloc(op_num * sizeof(Element))
   for (int i = 0; i < op_num; i++) {
     char operation[8];
     fscanf(file, "%d %s %d", &elements[i].product_id, operation, &elements[i].units);
@@ -156,28 +156,6 @@ int copy_file(const char *file_name) {
     perror("Error closing file"); 
     return -1;  
   }
-
-
-  // // Open the file
-  // if ((fd = open(file_name, O_RDONLY)) == -1) {
-  //   perror("ERROR opening file\n");
-  //   return -1;
-  // }
-
-  // // Read the number of operations from the file
-  // // ..........
-
-  // // MALLOC the operations array
-  // operations = (char **) malloc(sizeof(char) * LINE_SIZE * op_num);
-  
-  // // Extract the operations from the file
-  // // .........
-
-  // // Close the file
-  // if (close(fd) == -1) {
-  //   perror("ERROR closing file");
-  //   return -1;
-  // } 
 
   return 0;
 }
@@ -254,7 +232,7 @@ void print_result() {
  * @param elem: element to store
 */
 int store_element(struct element *elem) {
-  // Critical section !! -> thread pushes the element into the queue
+  // !! Critical section <begin> !! -> thread pushes the element into the queue
   pthread_mutex_lock(&mutex[ENQUEUE_MUTEXNO]);
   while (queue_full(&elem_queue)) {
     pthread_cond_wait(&non_full, &mutex[ENQUEUE_MUTEXNO]);
@@ -264,6 +242,7 @@ int store_element(struct element *elem) {
 
   pthread_cond_signal(&non_empty);
   pthread_mutex_unlock(&mutex[ENQUEUE_MUTEXNO]);
+  // !! Critical section <end> !!
   
   return 0;
 };
@@ -302,19 +281,23 @@ void producer() {
     fprintf(stdout, "I'm a producer!\n");
 
 
-    // Critical section !! -> assign operation to thread
-    pthread_mutex_lock(&mutex[READFILE_MUTEXNO]);
+    // !! Critical section <begin> !! -> assign operation to thread
+    pthread_mutex_lock(&mutex[GETOPNUM_MUTEXNO]);
     if (op_count >= op_num) {
-      pthread_mutex_unlock(&mutex[READFILE_MUTEXNO]);
+      pthread_mutex_unlock(&mutex[GETOPNUM_MUTEXNO]);
       break;
     }
+
     op_index = op_count++;
-    pthread_mutex_unlock(&mutex[READFILE_MUTEXNO]);
+
+    pthread_mutex_unlock(&mutex[GETOPNUM_MUTEXNO]);
+    // !! Critical section <end> !!
 
     // Extract the information from the operation
     sscanf(operations[op_index], "%d %s %d", &product_id, op_str, &units);
 
     // Transform the extracted information as an element
+    // ??
     if (strcmp(op_str, "PURCHASE") == 0)
       elem.op = 0;
     else if (strcmp(op_str, "SALE") == 0)
@@ -375,11 +358,14 @@ int main (int argc, const char * argv[])
     return -1;
 
   // Copy the contents of the file into memory
-  copy_file(argv[1]);
+  if (copy_file(argv[1]) == -1)
+    return -1;
 
   // Warn user of big variables passed through the arguments array
   print_warnings();
 
+  // Initialize the queue
+  elem_queue = queue_init(buffer_size); 
 
   // Esto no functiona con arrays, tiene q ir como malloc
   pthread_t producers[num_producers]; // Array of producer threads
@@ -416,6 +402,11 @@ int main (int argc, const char * argv[])
   }
   pthread_cond_destroy(&non_full);  // Destroy the condition variable non_full
   pthread_cond_destroy(&non_empty); // Destroy the condition variable non_empty
+
+
+  free(elements); // Free the memory allocated for the elements array
+  queue_destroy(&elem_queue); // Destroy the queue
+
 
   // Output
   print_result();
