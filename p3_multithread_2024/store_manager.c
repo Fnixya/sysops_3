@@ -26,14 +26,6 @@
 #define DEQUEUE_MUTEXNO 2
 #define UPDATESTOCK_MUTEXNO 3
 
-/* Struct Definition ________________________________________________________________________________________________________ */
-
-typedef struct {
-  int product_id; //Product identifier
-  int op;         //Operation
-  int units;      //Product units
-} Element;
-
 /* Global Variables_________________________________________________________________________________________________ */
 
 char **operations;
@@ -50,7 +42,7 @@ pthread_mutex_t mutex[4];
 pthread_cond_t non_full, non_empty;
 
 queue elem_queue;
-Element* elements;
+struct element* elements;
 
 
 /* Functions _______________________________________________________________________________________________________ */
@@ -136,7 +128,7 @@ int copy_file(const char *file_name) {
 
   fscanf(file, "%d", &op_num); // Read the number of operations from the file
 
-  elements = malloc(op_num * sizeof(Element))
+  elements = malloc(op_num * sizeof(struct element))
   for (int i = 0; i < op_num; i++) {
     char operation[8];
     fscanf(file, "%d %s %d", &elements[i].product_id, operation, &elements[i].units);
