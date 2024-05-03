@@ -41,8 +41,8 @@ int op_count, op_num, elem_count,
 pthread_mutex_t mutex[4];
 pthread_cond_t non_full, non_empty;
 
-queue elem_queue;
-struct element* elements;
+queue *elem_queue;
+struct element *elements;
 
 
 /* Functions _______________________________________________________________________________________________________ */
@@ -50,9 +50,10 @@ struct element* elements;
 int process_args(int argc, const char *argv[]);
 int copy_file(const char *file_name);
 void print_warnings();
+void thread_manager();
 
 int my_strtol(const char *string, long *number);
-void print_result();
+int print_result();
 
 int store_element(struct element *elem);
 int process_element(struct element *elem);
@@ -77,16 +78,17 @@ int process_args(int argc, const char * argv[]) {
   }
 
   // Convert all the arguments to long
-  if (my_strtol(argv[2], &num_producers) == -1) {
-    fprintf(stderr, "ERROR: <num producers> is not an interger\n");
+  char *strerr = NULL;
+  if (my_strtol(argv[2], &num_producers, strerr) == -1) {
+    fprintf(stderr, "ERROR: <num producers> %s", strerr);
     return -1;
   }
-  if (my_strtol(argv[3], &num_consumers) == -1) {
-    fprintf(stderr, "ERROR: <num consumers> is not an interger\n");
+  if (my_strtol(argv[3], &num_consumers, strerr) == -1) {
+    fprintf(stderr, "ERROR: <num consumers> %s", strerr);
     return -1;
   }
-  if (my_strtol(argv[4], &buffer_size) == -1) {
-    fprintf(stderr, "ERROR: <buff size> is not an interger\n");
+  if (my_strtol(argv[4], &buffer_size, strerr) == -1) {
+    fprintf(stderr, "ERROR: <buff size> %s", strerr);
     return -1;
   }
 
@@ -169,13 +171,57 @@ void print_warnings() {
 }
 
 
+int thread_manager() {
+  // Esto no functiona con arrays, tiene q ir como malloc
+  pthread_t producers = malloc(num_producers * sizeof(pthread_t)), // Array of producer threads
+    consumers = malloc(num_consumers * sizeof(pthread_t)); // Array of consumer threads
+
+  for (int i = 0; i < 4; i++) {
+    pthread_mutex_init(&mutex[i], NULL); // Initialize the mutex
+  }
+  pthread_cond_init(&non_full, NULL);   // Initialize the condition variable non_full
+  pthread_cond_init(&non_empty, NULL);  // Initialize the condition variable nond<<<<<<<<<<<<_empty
+
+  int operations_per_producer = op_num / num_producers; // Number of operations per producer
+  for (int i = 0; i < num_producers; i++) { 
+    int start = i * operations_per_producer; // Start index
+    int end = (i == num_producers - 1) ? op_num : start + operations_per_producer; // End index 
+    // Assuming the Producer function takes a struct with the start and end indices
+    pthread_create(&producers[i], NULL, (void *) producer, &(Range){start, end}); // Create the producer thread
+  }
+
+  for (int i = 0; i < num_consumers; i++) {
+    pthread_create(&consumers[i], NULL, (void *) consumer, NULL); // Create the consumer thread
+  }
+
+  for (int i = 0; i < num_producers; i++) {
+    pthread_join(producers[i], NULL); // Wait for the producer threads to finish
+  }
+
+  for (int i = 0; i < num_consumers; i++) {
+    pthread_join(consumers[i], NULL); // Wait for the consumer threads to finish
+  }
+  
+  for (int i = 0; i < 4; i++) {
+    pthread_mutex_destroy(&mutex[i]); // Destroy the mutex
+  }
+  pthread_cond_destroy(&non_full);  // Destroy the condition variable non_full
+  pthread_cond_destroy(&non_empty); // Destroy the condition variable non_empty
+
+  return 0;
+}
+
+
+
+
+
 /***
  * Conversion from string to long integer using strtol with some error handling
  * @param string: string to convert to long
  * @param number: pointer to store the result
  * @return Error -1 otherwise 0 
 */
-int my_strtol(const char *string, long *number) {
+int my_strtol(const char *string, long *number, char* strerr) {
     // https://stackoverflow.com/questions/8871711/atoi-how-to-identify-the-difference-between-zero-and-error
     char *nptr, *endptr = NULL;                            /* pointer to additional chars  */
     nptr = (char *) string;
@@ -185,19 +231,19 @@ int my_strtol(const char *string, long *number) {
 
     // Error extracting number (it is not an integer)
     if (nptr && *endptr != 0) {
-      fprintf(stdout, "[ERROR] Not an integer\n");
+      strerr = " is not an integer\n";
       return -1;
     }
     // Overflow
     else if (errno == ERANGE && *number == LONG_MAX)
     {
-      fprintf(stdout, "[ERROR] Overflow\n");
+      strerr = " overlfow\n";
       return -1;
     }
     // Underflow
     else if (errno == ERANGE && *number == LONG_MIN)
     {
-      fprintf(stdout, "[ERROR] Underflow\n");
+      strerr = " underflow\n";
       return -1;
     }
 
@@ -359,46 +405,11 @@ int main (int argc, const char * argv[])
   // Initialize the queue
   elem_queue = queue_init(buffer_size); 
 
-  // Esto no functiona con arrays, tiene q ir como malloc
-  pthread_t producers[num_producers]; // Array of producer threads
-  pthread_t consumers[num_consumers]; // Array of consumer threads
-
-  for (int i = 0; i < 4; i++) {
-    pthread_mutex_init(&mutex[i], NULL); // Initialize the mutex
-  }
-  pthread_cond_init(&non_full, NULL);   // Initialize the condition variable non_full
-  pthread_cond_init(&non_empty, NULL);  // Initialize the condition variable nond<<<<<<<<<<<<_empty
-
-  int operations_per_producer = op_num / num_producers; // Number of operations per producer
-  for (int i = 0; i < num_producers; i++) { 
-    int start = i * operations_per_producer; // Start index
-    int end = (i == num_producers - 1) ? op_num : start + operations_per_producer; // End index 
-    // Assuming the Producer function takes a struct with the start and end indices
-    pthread_create(&producers[i], NULL, (void *) producer, &(Range){start, end}); // Create the producer thread
-  }
-
-  for (int i = 0; i < num_consumers; i++) {
-    pthread_create(&consumers[i], NULL, (void *) consumer, NULL); // Create the consumer thread
-  }
-
-  for (int i = 0; i < num_producers; i++) {
-    pthread_join(producers[i], NULL); // Wait for the producer threads to finish
-  }
-
-  for (int i = 0; i < num_consumers; i++) {
-    pthread_join(consumers[i], NULL); // Wait for the consumer threads to finish
-  }
-  
-  for (int i = 0; i < 4; i++) {
-    pthread_mutex_destroy(&mutex[i]); // Destroy the mutex
-  }
-  pthread_cond_destroy(&non_full);  // Destroy the condition variable non_full
-  pthread_cond_destroy(&non_empty); // Destroy the condition variable non_empty
-
+  if (thread_manager() == -1) 
+    return -1;
 
   free(elements); // Free the memory allocated for the elements array
   queue_destroy(&elem_queue); // Destroy the queue
-
 
   // Output
   print_result();
