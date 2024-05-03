@@ -170,12 +170,16 @@ void print_warnings() {
   }
 }
 
-
+/**
+ * @brief function that create, manage and destroy the threads
+ * @return int: -1 if error, 0 if success 
+ */
 int thread_manager() {
-  // Esto no functiona con arrays, tiene q ir como malloc
+  // malloc of producer and consumer threads
   pthread_t producers = malloc(num_producers * sizeof(pthread_t)), // Array of producer threads
     consumers = malloc(num_consumers * sizeof(pthread_t)); // Array of consumer threads
 
+  // Initialize mutex and conditional variables
   for (int i = 0; i < 4; i++) {
     pthread_mutex_init(&mutex[i], NULL); // Initialize the mutex
   }
@@ -202,6 +206,7 @@ int thread_manager() {
     pthread_join(consumers[i], NULL); // Wait for the consumer threads to finish
   }
   
+  // Destroy mutex and conditional variables
   for (int i = 0; i < 4; i++) {
     pthread_mutex_destroy(&mutex[i]); // Destroy the mutex
   }
