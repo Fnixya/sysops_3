@@ -130,18 +130,29 @@ int copy_file(const char *file_name) {
 
   fscanf(file, "%d", &op_num); // Read the number of operations from the file
 
-  elements = malloc(op_num * sizeof(struct element))
+  elements = malloc(op_num * sizeof(struct element));
+  char tmp_op[8];
+  int converted_num, invalid_operations = 0;
   for (int i = 0; i < op_num; i++) {
-    char operation[8];
-    fscanf(file, "%d %s %d", &elements[i].product_id, operation, &elements[i].units);
-    if (strcmp(operation, "PURCHASE") == 0) {
+    if (converted_num = fscanf(file, "%d %s %d", &elements[i].product_id, tmp_op, &elements[i].units) == -1) {
+      fprintf(stderr, "ERROR: There are less operations at the file than stated (%d)\n", op_num);
+      free(elements);
+      return -1;
+    }
+    else if (converted_num != 3) {
+      invalid_operations++;
+      continue;
+    }
+    
+    if (strcmp(tmp_op, "PURCHASE") == 0) {
       elements[i].op = 0; // Assuming 0 represents PURCHASE
     } 
-    else if (strcmp(operation, "SALE") == 0) {
+    else if (strcmp(tmp_op, "SALE") == 0) {
       elements[i].op = 1; // Assuming 1 represents SALE
     }
     else {
       elements[i].op = -1; // Assuming -1 represents an invalid operation
+      invalid_operations++;
     }
   }
 
