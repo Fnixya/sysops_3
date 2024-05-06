@@ -50,10 +50,10 @@ struct element *elements;
 int process_args(int argc, const char *argv[]);
 int copy_file(const char *file_name);
 void print_warnings();
-void thread_manager();
+int thread_manager();
 
-int my_strtol(const char *string, long *number);
-int print_result();
+int my_strtol(const char *string, long *number, char* strerr);
+void print_result();
 
 int store_element(struct element *elem);
 int process_element(struct element *elem);
@@ -74,7 +74,7 @@ int process_args(int argc, const char * argv[]) {
   // Check if the number of arguments is correct
   if (argc != 5) { 
     printf("Usage: ./store_manager <file name> <num producers> <num consumers> <buff size>\n");
-    return 1;
+    return -1;
   }
 
   // Convert all the arguments to long
@@ -131,10 +131,12 @@ int copy_file(const char *file_name) {
   fscanf(file, "%d", &op_num); // Read the number of operations from the file
 
   elements = malloc(op_num * sizeof(struct element));
-  char tmp_op[8];
+  char tmp_op[9];
   int converted_num, invalid_operations = 0;
   for (int i = 0; i < op_num; i++) {
-    if (converted_num = fscanf(file, "%d %s %d", &elements[i].product_id, tmp_op, &elements[i].units) == -1) {
+    converted_num = fscanf(file, "%d %s %d", &elements[i].product_id, tmp_op, &elements[i].units);
+    
+    if (converted_num == -1) {
       fprintf(stderr, "ERROR: There are less operations at the file than stated (%d)\n", op_num);
       free(elements);
       return -1;
@@ -187,8 +189,8 @@ void print_warnings() {
  */
 int thread_manager() {
   // malloc of producer and consumer threads
-  pthread_t producers = malloc(num_producers * sizeof(pthread_t)), // Array of producer threads
-    consumers = malloc(num_consumers * sizeof(pthread_t)); // Array of consumer threads
+  pthread_t *producers = (pthread_t *) malloc(num_producers * sizeof(pthread_t)), // Array of producer threads
+    *consumers = (pthread_t *) malloc(num_consumers * sizeof(pthread_t)); // Array of consumer threads
 
   // Initialize mutex and conditional variables
   for (int i = 0; i < 4; i++) {
@@ -197,12 +199,13 @@ int thread_manager() {
   pthread_cond_init(&non_full, NULL);   // Initialize the condition variable non_full
   pthread_cond_init(&non_empty, NULL);  // Initialize the condition variable nond<<<<<<<<<<<<_empty
 
-  int operations_per_producer = op_num / num_producers; // Number of operations per producer
+  // int operations_per_producer = op_num / num_producers; // Number of operations per producer
   for (int i = 0; i < num_producers; i++) { 
-    int start = i * operations_per_producer; // Start index
-    int end = (i == num_producers - 1) ? op_num : start + operations_per_producer; // End index 
+    // int start = i * operations_per_producer; // Start index
+    // int end = (i == num_producers - 1) ? op_num : start + operations_per_producer; // End index 
+    
     // Assuming the Producer function takes a struct with the start and end indices
-    pthread_create(&producers[i], NULL, (void *) producer, &(Range){start, end}); // Create the producer thread
+    pthread_create(&producers[i], NULL, (void *) producer, NULL); // Create the producer thread
   }
 
   for (int i = 0; i < num_consumers; i++) {
@@ -217,6 +220,8 @@ int thread_manager() {
     pthread_join(consumers[i], NULL); // Wait for the consumer threads to finish
   }
   
+  fprintf(stdout, "End of threads\n");
+
   // Destroy mutex and conditional variables
   for (int i = 0; i < 4; i++) {
     pthread_mutex_destroy(&mutex[i]); // Destroy the mutex
@@ -288,11 +293,11 @@ void print_result() {
 int store_element(struct element *elem) {
   // !! Critical section <begin> !! -> thread pushes the element into the queue
   pthread_mutex_lock(&mutex[ENQUEUE_MUTEXNO]);
-  while (queue_full(&elem_queue)) {
+  while (queue_full(elem_queue)) {
     pthread_cond_wait(&non_full, &mutex[ENQUEUE_MUTEXNO]);
   }
 
-  queue_put(&elem_queue, elem);
+  queue_put(elem_queue, elem);
 
   pthread_cond_signal(&non_empty);
   pthread_mutex_unlock(&mutex[ENQUEUE_MUTEXNO]);
@@ -310,11 +315,15 @@ int process_element(struct element *elem) {
   int rate = (elem->op == 0) ? purchase_rates[elem->product_id-1] : sale_rates[elem->product_id-1],
       multiplier = (elem->op == 0) ? 1 : -1;
 
-  // Critical section !! -> thread updates common variables: product_stock[] and profits
+  printf("error here?\n");
+  // !! Critical section !! -> thread updates common variables: product_stock[] and profits
   pthread_mutex_lock(&mutex[UPDATESTOCK_MUTEXNO]);
+
   product_stock[elem->product_id-1] += multiplier * elem->units;
   profits = rate * elem->units;
+  
   pthread_mutex_unlock(&mutex[UPDATESTOCK_MUTEXNO]);
+  // !! Critical section !!
 
   return 0;
 };
@@ -328,9 +337,9 @@ void producer() {
   fprintf(stdout, "Start producer!\n");
   
   struct element elem;
-  char *op_str = NULL;
+  // char *op_str = NULL;
   int op_index;
-  int product_id, units;
+  // int product_id, units;
   while (op_count < op_num) {    
     fprintf(stdout, "I'm a producer!\n");
 
@@ -342,28 +351,20 @@ void producer() {
       break;
     }
 
-    op_index = op_count++;
+    op_index = op_count++;    
+    fprintf(stdout, "[producer %d begin]\n", op_index);
 
     pthread_mutex_unlock(&mutex[GETOPNUM_MUTEXNO]);
     // !! Critical section <end> !!
 
     // Extract the information from the operation
-    sscanf(operations[op_index], "%d %s %d", &product_id, op_str, &units);
-
-    // Transform the extracted information as an element
-    // ??
-    if (strcmp(op_str, "PURCHASE") == 0)
-      elem.op = 0;
-    else if (strcmp(op_str, "SALE") == 0)
-      elem.op = 1;
-    else 
-      elem.op = -1;
-
-    elem.product_id = product_id;
-    elem.units = units;
+    fprintf(stdout, "[producer %d check 0]\n", op_index);
+    elem = elements[op_index];
 
     // Store the element inside the queue
+    fprintf(stdout, "[producer %d check 1]: %d %d %d\n", op_index, elem.product_id, elem.op, elem.units);
     store_element(&elem);
+    fprintf(stdout, "[producer %d end]\n", op_index);
   }
 
   pthread_exit(0);
@@ -376,17 +377,19 @@ void producer() {
 */
 void consumer() {
   fprintf(stdout, "Start consumer!\n");
-  struct element *elem;
+  struct element elem;
   while (elem_count < op_num) {
     fprintf(stdout, "I'm a consumer!\n");
 
     // !! Critical section <begin> !! -> thread pops one element from the queue
     pthread_mutex_lock(&mutex[DEQUEUE_MUTEXNO]);
-    while (queue_empty(&elem_queue)) {
+    fprintf(stdout, "[consumer %d check 0]\n", elem_count);
+    while (queue_empty(elem_queue)) {
       pthread_cond_wait(&non_empty, &mutex[DEQUEUE_MUTEXNO]);
     }
 
-    elem = queue_get(&elem_queue);
+    fprintf(stdout, "[consumer %d]\n", elem_count);
+    elem = *queue_get(elem_queue);
     elem_count++;
 
     pthread_cond_signal(&non_empty);
@@ -394,7 +397,10 @@ void consumer() {
     // !! Critical section <end> !!
 
     // Process the element and update the common variables
-    process_element(elem);
+    fprintf(stdout, "[consumer %d check 1]: %d %d %d\n", elem_count, elem.product_id, elem.op, elem.units);
+
+    process_element(&elem);
+    fprintf(stdout, "[consumer %d end]\n", elem_count);
   }
   pthread_exit(0);
   return;
@@ -415,6 +421,7 @@ int main (int argc, const char * argv[])
   if (copy_file(argv[1]) == -1)
     return -1;
 
+  fprintf(stderr, "Number of operations: %d\n", op_num);
   // Warn user of big variables passed through the arguments array
   print_warnings();
 
@@ -425,7 +432,7 @@ int main (int argc, const char * argv[])
     return -1;
 
   free(elements); // Free the memory allocated for the elements array
-  queue_destroy(&elem_queue); // Destroy the queue
+  queue_destroy(elem_queue); // Destroy the queue
 
   // Output
   print_result();
