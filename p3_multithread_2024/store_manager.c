@@ -24,7 +24,6 @@
 #define MAX_BUFFER 65536
 #define LINE_SIZE 64
 
-#define QUEUE_MUTEXNO 0
 #define GETOPNUM_MUTEXNO 0
 #define ENQUEUE_MUTEXNO 1
 #define DEQUEUE_MUTEXNO 1
@@ -69,15 +68,12 @@ void consumer(void *id);
 
 
 
-
-
 /**
  * It processes the arguments passed to the program
  * @param argc: number of arguments
  * @param argv: arguments array
  * @return -1 if error, 0 if successfull
 */
-
 int process_args(int argc, const char * argv[]) {
   if (argc != 5) { 
     printf("Usage: ./store_manager <file name> <num producers> <num consumers> <buff size>\n");
@@ -158,7 +154,7 @@ int copy_file(const char *file_name) {
     converted_num = fscanf(file, "%d %s %d", &elements[i].product_id, tmp_op, &elements[i].units);
     
     if (converted_num == -1) {
-      fprintf(stderr, "ERROR: There are less operations at the file than stated (%d)\n", op_num);
+      fprintf(stderr, "ERROR: There are less operations at the file than stated (N=%d but there are %d operations)\n", op_num, i);
       free(elements);
       fclose(file);
       return -1;
@@ -314,6 +310,7 @@ int thread_manager() {
 
   free(producers);
   free(consumers);
+  free(ids);
 
   return 0;
 }
@@ -378,7 +375,7 @@ void print_result() {
  * It stores the information scrapped from the file inside an struct element and pushes it into the queue
  * @param elem: element to store
 */
-int store_element(struct element *elem, int id) {
+int store_element(struct element *elem, int thread_id) {
   #ifdef DEBUG
   int was_full = 0;
   #endif
@@ -388,7 +385,7 @@ int store_element(struct element *elem, int id) {
   while (queue_full(elem_queue) == 1) {
     #ifdef DEBUG
     was_full = 1;
-    printf("\tproducer %d blocked\n", id);
+    printf("\tproducer %d blocked\n", thread_id);
     #endif
 
     pthread_cond_wait(&non_full, &mutex[ENQUEUE_MUTEXNO]);
@@ -396,9 +393,8 @@ int store_element(struct element *elem, int id) {
 
   #ifdef DEBUG
   if (was_full == 1)
-    printf("\tproducer %d unblocked\n", id);
+    printf("\tproducer %d unblocked\n", thread_id);
   #endif
-  
 
   queue_put(elem_queue, elem);
 
@@ -429,6 +425,7 @@ int process_element(struct element *elem) {
     product_stock[elem->product_id - 1] -= elem->units;
     profits += sale_rates[elem->product_id - 1] * elem->units;
   }
+
   pthread_mutex_unlock(&mutex[UPDATESTOCK_MUTEXNO]);
   // !! Critical section <end> !!
   
@@ -447,7 +444,7 @@ void producer(void *id) {
   fprintf(stdout, "Start producer!\n");
   #endif
 
-  struct element *elem;
+  struct element elem;
   int op_index;
   while (op_count < op_num) {    
     #ifdef DEBUG
@@ -459,35 +456,19 @@ void producer(void *id) {
       pthread_mutex_unlock(&mutex[GETOPNUM_MUTEXNO]);
       break;
     }
-
     op_index = op_count++;    
-
     pthread_mutex_unlock(&mutex[GETOPNUM_MUTEXNO]);
     
     #ifdef DEBUG
     fprintf(stdout, "[producer %d begin]\n", op_index);
     #endif
 
-    elem = &elements[op_index];
+    elem = elements[op_index];
 
-    store_element(elem, *(int*)id);
+    store_element(&elem, *(int*)id);
 
     #ifdef DEBUG
     fprintf(stdout, "[producer %d - elem %d end]\n", *(int *) id, op_index);
-    #endif
-
-    // pthread_mutex_lock(&mutex[ENQUEUE_MUTEXNO]);
-    // while (queue_full(elem_queue)) {
-    //   pthread_cond_wait(&non_full, &mutex[ENQUEUE_MUTEXNO]);
-    // }
-
-    // queue_put(elem_queue, &elem);
-
-    // pthread_mutex_unlock(&mutex[ENQUEUE_MUTEXNO]);
-    // pthread_cond_signal(&non_empty);
-
-    #ifdef DEBUG
-    fprintf(stdout, "[producer %d end]\n", op_index);
     #endif
   }
 
