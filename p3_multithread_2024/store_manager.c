@@ -23,7 +23,7 @@
  
 #define GETOPNUM_MUTEXNO 0
 #define ENQUEUE_MUTEXNO 1
-#define DEQUEUE_MUTEXNO 2
+#define DEQUEUE_MUTEXNO 1
 #define UPDATESTOCK_MUTEXNO 3
 
 /* Global Variables_________________________________________________________________________________________________ */
@@ -54,11 +54,11 @@ int thread_manager();
 int my_strtol(const char *string, long *number, char* strerr);
 void print_result();
 
-int store_element(struct element *elem);
+int store_element(struct element *elem, int id);
 int process_element(struct element *elem);
 
-void producer();
-void consumer();
+void producer(void *id);
+void consumer(void *id);
 
 /* __________________________________________________________________________________________________________________ */
 
@@ -211,7 +211,7 @@ int thread_manager() {
 
   for (int i = 0; i < num_consumers; i++) {
     ids[i] = i;
-    pthread_create(&consumers[i], NULL, (void *) cummers, (void *) &ids[i]); // Create the consumer thread
+    pthread_create(&consumers[i], NULL, (void *) consumer, (void *) &ids[i]); // Create the consumer thread
   }
 
   for (int i = 0; i < num_producers; i++) {
@@ -296,12 +296,19 @@ void print_result() {
  * It stores the information scrapped from the file inside an struct element and pushes it into the queue
  * @param elem: element to store
 */
-int store_element(struct element *elem) {
+int store_element(struct element *elem, int id) {
+  int was_full = 0;
   // !! Critical section <begin> !! -> thread pushes the element into the queue
   pthread_mutex_lock(&mutex[ENQUEUE_MUTEXNO]);
   while (queue_full(elem_queue) == 1) {
-    printf("\tproducer blocked\n");
+    was_full = 1;
+    printf("\tproducer %d blocked\n", id);
+    pthread_cond_signal(&non_empty);
     pthread_cond_wait(&non_full, &mutex[ENQUEUE_MUTEXNO]);
+  }
+
+  if (was_full == 1) {
+    printf("\tproducer %d unblocked\n", id);
   }
 
   // pthread_mutex_lock(&mutex[DEQUEUE_MUTEXNO]);
@@ -366,11 +373,11 @@ void producer(void* id) {
 
     // Store the element inside the queue
     // fprintf(stdout, "[producer %d check enqueue]: %d %d %d\n", op_index, elem->product_id, elem->op, elem->units);
-    store_element(elem);
+    store_element(elem, *(int*)id);
     fprintf(stdout, "[producer %d - elem %d end]\n", *(int *) id, op_index);
   }
 
-  fprintf(stdout, "End producer %d!\n", *(int *) id);
+  fprintf(stdout, "\t\t\tEnd producer %d!\n", *(int *) id);
   pthread_exit(0);
   return;
 }
@@ -379,22 +386,31 @@ void producer(void* id) {
  * Consumer function for the consumer thread
  * @return -1 if error, 0 if success
 */
-void cummers(void* id) {
+void consumer(void* id) {
   fprintf(stdout, "Start consumer %d!\n", *(int *) id);
 
   struct element elem;
   int elem_index;
   while (elem_count < op_num) {
+    int was_empty = 0;
     // !! Critical section <begin> !! -> thread pops one element from the queue
     pthread_mutex_lock(&mutex[DEQUEUE_MUTEXNO]);
     elem_index = elem_count++; 
-    if (elem_index >= op_num)
+    if (elem_index >= op_num) {
+      pthread_mutex_unlock(&mutex[DEQUEUE_MUTEXNO]);
       break;
+    }
     fprintf(stdout, "[consumer %d - elem %d begin]\n", *(int *) id, elem_index);
 
     while (queue_empty(elem_queue) == 1) {
+      was_empty = 1;
       printf("\tconsumer %d blocked\n", *(int *) id);
+      pthread_cond_signal(&non_full);
       pthread_cond_wait(&non_empty, &mutex[DEQUEUE_MUTEXNO]);
+    }
+
+    if (was_empty == 1) {
+      printf("\tconsumer %d unblocked\n", *(int *) id);
     }
 
     // pthread_mutex_lock(&mutex[ENQUEUE_MUTEXNO]);
@@ -412,7 +428,7 @@ void cummers(void* id) {
     fprintf(stdout, "[consumer %d - elem %d end]\n", *(int *) id, elem_index);
   }
   
-  fprintf(stdout, "End consumer %d\n", *(int *) id);
+  fprintf(stdout, "\t\t\tEnd consumer %d\n", *(int *) id);
   pthread_exit(0);
   return;
 }
