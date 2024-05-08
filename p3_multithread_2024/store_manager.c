@@ -176,6 +176,14 @@ int copy_file(const char *file_name) {
     }
   }
 
+  // Check for extra operations
+  if (fscanf(file, "%d %s %d", &elements[0].product_id, tmp_op, &elements[0].units) != EOF) {
+    fprintf(stderr, "ERROR: There are more operations in the file than stated (%d)\n", op_num);
+    free(elements);
+    fclose(file);
+    return -1;
+  }
+
   if (invalid_operations > 0) { // Print a warning message if there were any invalid operations
     fprintf(stderr, "WARNING: There were %d invalid operations\n", invalid_operations);
   }
