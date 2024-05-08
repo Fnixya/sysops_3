@@ -28,7 +28,6 @@
 
 /* Global Variables_________________________________________________________________________________________________ */
 
-char **operations;
 long num_producers, num_consumers, buffer_size;
 
 int op_count, op_num, elem_count,
@@ -137,7 +136,7 @@ int copy_file(const char *file_name) {
     converted_num = fscanf(file, "%d %s %d", &elements[i].product_id, tmp_op, &elements[i].units);
     
     if (converted_num == -1) {
-      fprintf(stderr, "ERROR: There are less operations at the file than stated (%d)\n", op_num);
+      fprintf(stderr, "ERROR: There are less operations at the file than stated (N=%d but %d operations was found)\n", op_num, i);
       free(elements);
       return -1;
     }
@@ -164,7 +163,7 @@ int copy_file(const char *file_name) {
     return -1;  
   }
 
-  return 0;
+  return invalid_operations;
 }
 
 
@@ -189,6 +188,7 @@ void print_warnings() {
  */
 int thread_manager() {
   // malloc of producer and consumer threads
+  int *ids = (int *) malloc((num_consumers < num_producers ? num_producers : num_consumers) * sizeof(int));
   pthread_t *producers = (pthread_t *) malloc(num_producers * sizeof(pthread_t)), // Array of producer threads
     *consumers = (pthread_t *) malloc(num_consumers * sizeof(pthread_t)); // Array of consumer threads
 
@@ -203,13 +203,15 @@ int thread_manager() {
   for (int i = 0; i < num_producers; i++) { 
     // int start = i * operations_per_producer; // Start index
     // int end = (i == num_producers - 1) ? op_num : start + operations_per_producer; // End index 
-    
+    ids[i] = i;
+
     // Assuming the Producer function takes a struct with the start and end indices
-    pthread_create(&producers[i], NULL, (void *) producer, NULL); // Create the producer thread
+    pthread_create(&producers[i], NULL, (void *) producer, (void *) &ids[i]); // Create the producer thread
   }
 
   for (int i = 0; i < num_consumers; i++) {
-    pthread_create(&consumers[i], NULL, (void *) consumer, NULL); // Create the consumer thread
+    ids[i] = i;
+    pthread_create(&consumers[i], NULL, (void *) cummers, (void *) &ids[i]); // Create the consumer thread
   }
 
   for (int i = 0; i < num_producers; i++) {
@@ -228,6 +230,10 @@ int thread_manager() {
   }
   pthread_cond_destroy(&non_full);  // Destroy the condition variable non_full
   pthread_cond_destroy(&non_empty); // Destroy the condition variable non_empty
+
+  free(ids);
+  free(producers);
+  free(consumers);
 
   return 0;
 }
@@ -293,11 +299,14 @@ void print_result() {
 int store_element(struct element *elem) {
   // !! Critical section <begin> !! -> thread pushes the element into the queue
   pthread_mutex_lock(&mutex[ENQUEUE_MUTEXNO]);
-  while (queue_full(elem_queue)) {
+  while (queue_full(elem_queue) == 1) {
+    printf("\tproducer blocked\n");
     pthread_cond_wait(&non_full, &mutex[ENQUEUE_MUTEXNO]);
   }
 
+  // pthread_mutex_lock(&mutex[DEQUEUE_MUTEXNO]);
   queue_put(elem_queue, elem);
+  // pthread_mutex_unlock(&mutex[DEQUEUE_MUTEXNO]);
 
   pthread_cond_signal(&non_empty);
   pthread_mutex_unlock(&mutex[ENQUEUE_MUTEXNO]);
@@ -315,15 +324,14 @@ int process_element(struct element *elem) {
   int rate = (elem->op == 0) ? purchase_rates[elem->product_id-1] : sale_rates[elem->product_id-1],
       multiplier = (elem->op == 0) ? 1 : -1;
 
-  printf("error here?\n");
-  // !! Critical section !! -> thread updates common variables: product_stock[] and profits
+  // !! Critical section <begin> !! -> thread updates common variables: product_stock[] and profits
   pthread_mutex_lock(&mutex[UPDATESTOCK_MUTEXNO]);
 
   product_stock[elem->product_id-1] += multiplier * elem->units;
-  profits = rate * elem->units;
+  profits += rate * elem->units;
   
   pthread_mutex_unlock(&mutex[UPDATESTOCK_MUTEXNO]);
-  // !! Critical section !!
+  // !! Critical section <end> !!
 
   return 0;
 };
@@ -333,17 +341,12 @@ int process_element(struct element *elem) {
  * Producer function for the producer thread
  * @return -1 if error, 0 if success
 */
-void producer() {
-  fprintf(stdout, "Start producer!\n");
+void producer(void* id) {
+  fprintf(stdout, "Start producer %d!\n", *(int *) id);
   
-  struct element elem;
-  // char *op_str = NULL;
+  struct element *elem;
   int op_index;
-  // int product_id, units;
   while (op_count < op_num) {    
-    fprintf(stdout, "I'm a producer!\n");
-
-
     // !! Critical section <begin> !! -> assign operation to thread
     pthread_mutex_lock(&mutex[GETOPNUM_MUTEXNO]);
     if (op_count >= op_num) {
@@ -352,21 +355,22 @@ void producer() {
     }
 
     op_index = op_count++;    
-    fprintf(stdout, "[producer %d begin]\n", op_index);
 
     pthread_mutex_unlock(&mutex[GETOPNUM_MUTEXNO]);
     // !! Critical section <end> !!
 
+
     // Extract the information from the operation
-    fprintf(stdout, "[producer %d check 0]\n", op_index);
-    elem = elements[op_index];
+    fprintf(stdout, "[producer %d - elem %d begin]\n", *(int *) id, op_index);
+    elem = &elements[op_index];
 
     // Store the element inside the queue
-    fprintf(stdout, "[producer %d check 1]: %d %d %d\n", op_index, elem.product_id, elem.op, elem.units);
-    store_element(&elem);
-    fprintf(stdout, "[producer %d end]\n", op_index);
+    // fprintf(stdout, "[producer %d check enqueue]: %d %d %d\n", op_index, elem->product_id, elem->op, elem->units);
+    store_element(elem);
+    fprintf(stdout, "[producer %d - elem %d end]\n", *(int *) id, op_index);
   }
 
+  fprintf(stdout, "End producer %d!\n", *(int *) id);
   pthread_exit(0);
   return;
 }
@@ -375,33 +379,40 @@ void producer() {
  * Consumer function for the consumer thread
  * @return -1 if error, 0 if success
 */
-void consumer() {
-  fprintf(stdout, "Start consumer!\n");
-  struct element elem;
-  while (elem_count < op_num) {
-    fprintf(stdout, "I'm a consumer!\n");
+void cummers(void* id) {
+  fprintf(stdout, "Start consumer %d!\n", *(int *) id);
 
+  struct element elem;
+  int elem_index;
+  while (elem_count < op_num) {
     // !! Critical section <begin> !! -> thread pops one element from the queue
     pthread_mutex_lock(&mutex[DEQUEUE_MUTEXNO]);
-    fprintf(stdout, "[consumer %d check 0]\n", elem_count);
-    while (queue_empty(elem_queue)) {
+    elem_index = elem_count++; 
+    if (elem_index >= op_num)
+      break;
+    fprintf(stdout, "[consumer %d - elem %d begin]\n", *(int *) id, elem_index);
+
+    while (queue_empty(elem_queue) == 1) {
+      printf("\tconsumer %d blocked\n", *(int *) id);
       pthread_cond_wait(&non_empty, &mutex[DEQUEUE_MUTEXNO]);
     }
 
-    fprintf(stdout, "[consumer %d]\n", elem_count);
+    // pthread_mutex_lock(&mutex[ENQUEUE_MUTEXNO]);
     elem = *queue_get(elem_queue);
-    elem_count++;
+    // pthread_mutex_unlock(&mutex[ENQUEUE_MUTEXNO]);
 
-    pthread_cond_signal(&non_empty);
+    pthread_cond_signal(&non_full);
     pthread_mutex_unlock(&mutex[DEQUEUE_MUTEXNO]);
     // !! Critical section <end> !!
 
     // Process the element and update the common variables
-    fprintf(stdout, "[consumer %d check 1]: %d %d %d\n", elem_count, elem.product_id, elem.op, elem.units);
 
+    fprintf(stdout, "[consumer %d - elem %d check 0]\n", *(int *) id, elem_index);
     process_element(&elem);
-    fprintf(stdout, "[consumer %d end]\n", elem_count);
+    fprintf(stdout, "[consumer %d - elem %d end]\n", *(int *) id, elem_index);
   }
+  
+  fprintf(stdout, "End consumer %d\n", *(int *) id);
   pthread_exit(0);
   return;
 }
@@ -418,10 +429,15 @@ int main (int argc, const char * argv[])
     return -1;
 
   // Copy the contents of the file into memory
-  if (copy_file(argv[1]) == -1)
+  int invalid_operations;
+  if ((invalid_operations = copy_file(argv[1])) == -1)
     return -1;
+  else if (invalid_operations != 0)
+    fprintf(stderr, "WARNING: There are %d invalid operations in the file\n", invalid_operations);
 
-  fprintf(stderr, "Number of operations: %d\n", op_num);
+  // temporal debug
+      fprintf(stderr, "Number of operations: %d\n", op_num);
+
   // Warn user of big variables passed through the arguments array
   print_warnings();
 
