@@ -25,6 +25,7 @@
 #define MAX_BUFFER 65536
 #define LINE_SIZE 64
 
+#define MUTEX_SIZE 3
 #define GETOPNUM_MUTEXNO 0
 #define QUEUE_MUTEXNO 1
 #define UPDATESTOCK_MUTEXNO 2
@@ -41,11 +42,12 @@ int op_count, op_num, elem_count,
   purchase_rates [5] = { 2, 5, 15, 25, 100 },
   sale_rates [5] = { 3, 10, 20, 40, 125 };
 
+// Used for debugging
 int debug_profits = 0,
   debug_stock[5] = {0},
   debug_count = 0;
 
-pthread_mutex_t mutex[4];
+pthread_mutex_t mutex[MUTEX_SIZE];
 pthread_cond_t non_full, non_empty;
 
 queue *elem_queue;
@@ -61,10 +63,11 @@ int thread_manager();
 
 int my_strtol(const char *string, long *number, char* strerr);
 void print_result();
-void debug_print_result();
 
 int store_element(struct element *elem, int id);
 int process_element(struct element *elem);
+
+void debug_print_result();
 int debug_process_element(struct element *elem);
 
 void producer(void *id);
@@ -116,6 +119,10 @@ int process_args(int argc, const char * argv[]) {
     fprintf(stderr, "ERROR: The buffer size must be greater than 0\n");
     err_count++;
   }
+  else if (buffer_size > INT_MAX) {
+    fprintf(stderr, "ERROR: The buffer size is too big, introduce a number lower than %d\n", INT_MAX);
+    err_count++;
+  }
 
   if (err_count > 0) {
     return -5;
@@ -147,13 +154,15 @@ int copy_file(const char *file_name) {
     return -1;
   }
 
-  elements = malloc(op_num * sizeof(struct element));
+  // Allocate memory for the elements array
+  elements = (struct element *) malloc(op_num * sizeof(struct element));
   if (elements == NULL) { // Check the return value of malloc
     perror("Error allocating memory");
     fclose(file);
     return -1;
   }
 
+  // Scan each line of the file and convert it to an struct element and store it in an array 
   char tmp_op[9];
   int converted_num, invalid_operations = 0;
   for (int i = 0; i < op_num; i++) {
@@ -182,16 +191,8 @@ int copy_file(const char *file_name) {
     }
   }
 
-  // Check for extra operations
-  // if (fscanf(file, "%d %s %d", &elements[0].product_id, tmp_op, &elements[0].units) != EOF) {
-  //   fprintf(stderr, "ERROR: There are more operations in the file than stated (%d)\n", op_num);
-  //   free(elements);
-  //   fclose(file);
-  //   return -1;
-  // }
-
   if (invalid_operations > 0) { // Print a warning message if there were any invalid operations
-    fprintf(stderr, "WARNING: There were %d invalid operations\n", invalid_operations);
+    fprintf(stderr, "WARNING: There are %d invalid operations in %s which will be ignored\n", invalid_operations, file_name);
   }
 
   if (fclose(file) == -1) {
@@ -230,6 +231,7 @@ void print_warnings() {
  * @return int: -1 if error, 0 if success 
  */
 int thread_manager() {
+  // this is used to assigned an id to each thread (only for debugging purposes)
   int *ids = (int *) malloc((num_consumers < num_producers ? num_producers : num_consumers) * sizeof(int));
 
   pthread_t *producers = (pthread_t *) malloc(num_producers * sizeof(pthread_t));
@@ -246,7 +248,7 @@ int thread_manager() {
   }
 
 
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < MUTEX_SIZE; i++) {
     if (pthread_mutex_init(&mutex[i], NULL) != 0) {
       perror("Error initializing mutex");
       free(producers);
@@ -257,7 +259,7 @@ int thread_manager() {
 
   if (pthread_cond_init(&non_full, NULL) != 0 || pthread_cond_init(&non_empty, NULL) != 0) {
     perror("Error initializing condition variable");
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < MUTEX_SIZE; i++) {
       pthread_mutex_destroy(&mutex[i]);
     }
     free(producers);
@@ -272,7 +274,7 @@ int thread_manager() {
       for (int j = 0; j < i; j++) {
         pthread_cancel(producers[j]);
       }
-      for (int i = 0; i < 4; i++) {
+      for (int i = 0; i < MUTEX_SIZE; i++) {
         pthread_mutex_destroy(&mutex[i]);
       }
       pthread_cond_destroy(&non_full);
@@ -293,7 +295,7 @@ int thread_manager() {
       for (int j = 0; j < i; j++) {
         pthread_cancel(consumers[j]);
       }
-      for (int i = 0; i < 4; i++) {
+      for (int i = 0; i < MUTEX_SIZE; i++) {
         pthread_mutex_destroy(&mutex[i]);
       }
       pthread_cond_destroy(&non_full);
@@ -316,12 +318,13 @@ int thread_manager() {
   fprintf(stdout, "End of threads\n");
   #endif
 
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < MUTEX_SIZE; i++) {
     pthread_mutex_destroy(&mutex[i]);
   }
   pthread_cond_destroy(&non_full);
   pthread_cond_destroy(&non_empty);
 
+  // Free allocated memory for threads
   free(producers);
   free(consumers);
   free(ids);
@@ -544,7 +547,7 @@ void consumer(void *id) {
   fprintf(stdout, "Start consumer %d!\n", *(int *) id);
   #endif
 
-  struct element elem;
+  struct element elem, *elem_ptr;
   int elem_index;
   while (elem_count < op_num) {
     // !! Critical section <begin> !! -> thread pops one element from the queue
@@ -573,7 +576,11 @@ void consumer(void *id) {
       fprintf(stdout, "\tconsumer %d unblocked\n", *(int *) id);
     #endif
 
-    elem = *queue_get(elem_queue);
+    if ((elem_ptr = queue_get(elem_queue)) == NULL) {
+      fprintf(stderr, "Error getting element from queue\n");
+      pthread_exit((void *) -1);
+    }
+    elem = *elem_ptr;
 
     pthread_cond_signal(&non_full);
     pthread_mutex_unlock(&mutex[QUEUE_MUTEXNO]);
@@ -581,7 +588,7 @@ void consumer(void *id) {
     process_element(&elem);
 
     #ifdef DEBUG
-    fprintf(stdout, "[consumer %d end]\n", elem_count);
+    fprintf(stdout, "[consumer %d - elem %d end]\n", *(int *) id, elem_index);
     #endif
   }
 
@@ -610,7 +617,7 @@ int main (int argc, const char * argv[])
   }
 
   #ifdef DEBUG
-  fprintf(stderr, "Number of operations: %d\n", op_num);
+  fprintf(stdout, "Number of operations: %d\n", op_num);
   #endif
 
   // Warn user of big variables passed through the arguments array
@@ -625,6 +632,9 @@ int main (int argc, const char * argv[])
     queue_destroy(elem_queue); // Destroy the queue
     return -1;
   }
+  
+  free(elements); // Free the memory allocated for the elements array
+  queue_destroy(elem_queue); // Destroy the queue
 
   // Output
   #ifdef PRODUCER_DEBUG
@@ -633,8 +643,6 @@ int main (int argc, const char * argv[])
 
   print_result();
 
-  free(elements); // Free the memory allocated for the elements array
-  queue_destroy(elem_queue); // Destroy the queue
 
   return 0;
 }
