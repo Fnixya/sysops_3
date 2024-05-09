@@ -89,7 +89,6 @@ int process_args(int argc, const char * argv[]) {
     return -1;
   }
 
-  // Convert the string arguments to integers
   char *strerr = NULL;
   if (my_strtol(argv[2], &num_producers, strerr) == -1) {
     fprintf(stderr, "ERROR: <num producers> %s\n", strerr);
@@ -107,7 +106,6 @@ int process_args(int argc, const char * argv[]) {
     return -4;
   }
 
-  // Control integer arguments for producer number, consumer number and buffer size 
   int err_count = 0;
   if (num_producers < 1) {
     fprintf(stderr, "ERROR: The number of producers must be greater than 0\n");
@@ -122,8 +120,7 @@ int process_args(int argc, const char * argv[]) {
     err_count++;
   }
   else if (buffer_size > INT_MAX) {
-    // To avoid
-    fprintf(stderr, "ERROR: The buffer is too big, introduce some number less than %d\n", INT_MAX);
+    fprintf(stderr, "ERROR: The buffer size is too big, introduce a number lower than %d\n", INT_MAX);
     err_count++;
   }
 
@@ -236,29 +233,21 @@ void print_warnings() {
 int thread_manager() {
   // this is used to assigned an id to each thread (only for debugging purposes)
   int *ids = (int *) malloc((num_consumers < num_producers ? num_producers : num_consumers) * sizeof(int));
-  if (ids == NULL) {
-    perror("Error allocating memory for thread ids");
-    return -1;
-  }
 
-  // Allocate memory for each producer thread
   pthread_t *producers = (pthread_t *) malloc(num_producers * sizeof(pthread_t));
   if (producers == NULL) {
     perror("Error allocating memory for producer threads");
-    free(ids);
     return -1;
   }
 
-  // Allocate memory for each consumer thread
   pthread_t *consumers = (pthread_t *) malloc(num_consumers * sizeof(pthread_t));
   if (consumers == NULL) {
     perror("Error allocating memory for consumer threads");
-    free(ids);
     free(producers);
     return -1;
   }
 
-  // Create mutexes
+
   for (int i = 0; i < MUTEX_SIZE; i++) {
     if (pthread_mutex_init(&mutex[i], NULL) != 0) {
       perror("Error initializing mutex");
@@ -268,7 +257,6 @@ int thread_manager() {
     }
   }
 
-  // Create conditional variables
   if (pthread_cond_init(&non_full, NULL) != 0 || pthread_cond_init(&non_empty, NULL) != 0) {
     perror("Error initializing condition variable");
     for (int i = 0; i < MUTEX_SIZE; i++) {
@@ -529,7 +517,7 @@ void producer(void *id) {
     elem = elements[op_index];
 
     if (store_element(&elem, *(int*)id) == -1) {
-      fprintf(stderr, "Error storing element in queue\n");
+      fprintf(stderr, "Error storing element\n");
       pthread_exit((void *) -1);
     }
 
@@ -559,8 +547,7 @@ void consumer(void *id) {
   fprintf(stdout, "Start consumer %d!\n", *(int *) id);
   #endif
 
-  struct element elem;
-  // , *elem_ptr;
+  struct element elem, *elem_ptr;
   int elem_index;
   while (elem_count < op_num) {
     // !! Critical section <begin> !! -> thread pops one element from the queue
@@ -589,10 +576,11 @@ void consumer(void *id) {
       fprintf(stdout, "\tconsumer %d unblocked\n", *(int *) id);
     #endif
 
-    // if ((elem_ptr = queue_get(elem_queue)) == NULL) {
-    //   fprintf(stderr, "Error getting element from queue\n");
-    //   pthread_exit((void *) -1);
-    // }
+    if ((elem_ptr = queue_get(elem_queue)) == NULL) {
+      fprintf(stderr, "Error getting element from queue\n");
+      pthread_exit((void *) -1);
+    }
+    elem = *elem_ptr;
 
     pthread_cond_signal(&non_full);
     pthread_mutex_unlock(&mutex[QUEUE_MUTEXNO]);
