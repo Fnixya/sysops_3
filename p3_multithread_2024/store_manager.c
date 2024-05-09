@@ -106,15 +106,26 @@ int process_args(int argc, const char * argv[]) {
     return -4;
   }
 
+  // Print error when the arguments are not in the desired range [1, INT_MAX)
   int err_count = 0;
   if (num_producers < 1) {
     fprintf(stderr, "ERROR: The number of producers must be greater than 0\n");
     err_count++;
   }
+  else if (num_producers > INT_MAX) {
+    fprintf(stderr, "ERROR: The buffer size is too big, introduce a number lower than %d\n", INT_MAX);
+    err_count++;
+  }
+
   if (num_consumers < 1) {
     fprintf(stderr, "ERROR: The number of consumers must be greater than 0\n");
     err_count++;
   }
+  else if (num_consumers > INT_MAX) {
+    fprintf(stderr, "ERROR: The buffer size is too big, introduce a number lower than %d\n", INT_MAX);
+    err_count++;
+  }
+
   if (buffer_size < 1) {
     fprintf(stderr, "ERROR: The buffer size must be greater than 0\n");
     err_count++;
