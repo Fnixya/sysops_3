@@ -89,32 +89,47 @@ int process_args(int argc, const char * argv[]) {
     return -1;
   }
 
-  char *strerr = NULL;
+  char *strerr = malloc(64 * sizeof(char));
   if (my_strtol(argv[2], &num_producers, strerr) == -1) {
-    fprintf(stderr, "ERROR: <num producers> %s\n", strerr);
+    fprintf(stderr, "ERROR: <num producers> %s", strerr);
     printf("Usage: ./store_manager <file name> <num producers> <num consumers> <buff size>\n");
+    free(strerr);
     return -2;
   }
   if (my_strtol(argv[3], &num_consumers, strerr) == -1) {
-    fprintf(stderr, "ERROR: <num consumers> %s\n", strerr);
+    fprintf(stderr, "ERROR: <num consumers> %s", strerr);
     printf("Usage: ./store_manager <file name> <num producers> <num consumers> <buff size>\n");
+    free(strerr);
     return -3;
   }
   if (my_strtol(argv[4], &buffer_size, strerr) == -1) {
-    fprintf(stderr, "ERROR: <buff size> %s\n", strerr);
+    fprintf(stderr, "ERROR: <buff size> %s", strerr);
     printf("Usage: ./store_manager <file name> <num producers> <num consumers> <buff size>\n");
+    free(strerr);
     return -4;
   }
+  free(strerr);
 
+  // Print error when the arguments are not in the desired range [1, INT_MAX)
   int err_count = 0;
   if (num_producers < 1) {
     fprintf(stderr, "ERROR: The number of producers must be greater than 0\n");
     err_count++;
   }
+  else if (num_producers > INT_MAX) {
+    fprintf(stderr, "ERROR: The buffer size is too big, introduce a number lower than %d\n", INT_MAX);
+    err_count++;
+  }
+
   if (num_consumers < 1) {
     fprintf(stderr, "ERROR: The number of consumers must be greater than 0\n");
     err_count++;
   }
+  else if (num_consumers > INT_MAX) {
+    fprintf(stderr, "ERROR: The buffer size is too big, introduce a number lower than %d\n", INT_MAX);
+    err_count++;
+  }
+
   if (buffer_size < 1) {
     fprintf(stderr, "ERROR: The buffer size must be greater than 0\n");
     err_count++;
