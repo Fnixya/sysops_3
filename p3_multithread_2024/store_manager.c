@@ -180,9 +180,9 @@ int copy_file(const char *file_name) {
 
   // Scan each line of the file, convert it to a struct element, and store it in the elements array
   char tmp_op[9];
-  int converted_num, invalid_operations = 0;
+  int tmp_product_id, tmp_units, converted_num, invalid_operations = 0;
   for (int i = 0; i < op_num; i++) {
-    converted_num = fscanf(file, "%d %s %d", &elements[i].product_id, tmp_op, &elements[i].units);
+    converted_num = fscanf(file, "%d %s %d", &tmp_product_id, tmp_op, &tmp_units);
     
     // If there are less operations in the file than stated, print an error message, free the elements array, close the file, and return -1
     if (converted_num == -1) {
@@ -195,6 +195,25 @@ int copy_file(const char *file_name) {
     else if (converted_num != 3) {
       invalid_operations++;
       continue;
+    }
+
+    // Check if product id is valid
+    if (0 < tmp_product_id && tmp_product_id < 6) {
+      elements[i].product_id = tmp_product_id;
+    }
+    else {
+      elements[i].op = -1;
+      invalid_operations++;
+      continue;
+    }
+
+    if (tmp_units < 0) {
+      elements[i].op = -1;
+      invalid_operations++;
+      continue;
+    }
+    else {
+      elements[i].units = tmp_units;
     }
     
     // If the operation is a purchase, set the operation type to 0
